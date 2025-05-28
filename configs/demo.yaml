@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+  - hiera_manipulation
+  - _self_
+
+train: False
+
+video_path: ./my_video.mp4
+output_path: ./demo_output
+ckpt_path: ./data/childplay_hand/checkpoints/hiera_manipulation_hand.ckpt
+
+configs:
+  input_type: hand
+  output_path: ${output_path}
+
+  draw_body_skeletons: False
+  draw_hand_skeletons: False
+  draw_hand_action: True

@@ -1,0 +1,170 @@
+# @package _global_
+
+defaults:
+    - base
+
+model_name: poseconv3d
+
+#------------------------------------------------------------
+configs:
+    # Paths
+    root_vid: "${paths.root_vid}"
+    root_data: "${paths.root_data}" 
+    exp_dir: "${paths.exp_dir}"
+    storage_folder: ${paths.output_dir}
+
+    # Fixed
+    main_task: recognition
+    pipeline: ${model_name}_${configs.input_type}
+    eval_name: ${eval_name}
+    window_size: 48
+    sampling_rate: 1
+    train_batch_size: 32
+    test_batch_size: 64
+    train_num_workers: 6
+    test_num_workers: 6
+    pin_memory: True
+    mixed_training: 0
+    seed: 3407
+    extraction: False
+    weights_path: null
+
+    # Data 
+    task: 'object' # choices: {manipulation, object, full}
+    monitor_task: object # choices: {manipulation, object, full}
+    input_type: body # choices: {body, hand}
+    modality: ['Pose']
+    exclude_person_not_visible: True
+    exclude_person_not_visible_test: True
+
+    # Training
+    epochs: 10
+    gradient_clip_val: 40
+    tr_precision: 32
+    monitor_metric: f1
+
+    # Encoder
+    feat_dim: 512
+
+    # Adapter
+    adapter:
+        in_channels: 21
+        out_channels: 17
+
+    # Head
+    head:
+        hidden_dim: 256
+        dropout_ratio: 0.5
+        n_layers: 2
+
+    # Optim
+    solver:
+        name: "SGD"
+        lr_adapter: 0.018
+        lr_backbone: 0.0018
+        lr_head: 0.018
+        weight_decay: 0.0001
+        warmup_epochs: 2
+        scheduler: "step"
+        step_size: [6, 8]
+        momentum: 0.9
+        gamma: 0.1
+        lr_batch_size: 32
+
+    # Misc
+    wandb_project: CP_Hand
+    load_from: http://download.openmmlab.com/mmaction/pyskl/ckpt/posec3d/slowonly_r50_ntu60_xsub/joint.pth
+
+#------------------------------------------------------------
+datamodule:
+    _target_: src.datamodules.childplay_hand_datamodule.ChildPlayHandDataModule
+    cfg: ${configs}
+    train: ${train}
+
+#------------------------------------------------------------
+model:
+    _target_: src.models.poseconv3d_model.PoseConv3D_Model
+    cfg: ${configs}
+
+#------------------------------------------------------------
+trainer:
+    _target_: lightning.pytorch.Trainer
+    default_root_dir: ${paths.output_dir}
+    min_epochs: 1
+    max_epochs: ${configs.epochs}
+    accelerator: gpu
+    devices: 1
+    num_nodes: 1
+    check_val_every_n_epoch: 1
+    deterministic: False
+    benchmark: False
+    accumulate_grad_batches: 1
+    gradient_clip_val: ${configs.gradient_clip_val}
+    precision: ${configs.tr_precision}
+    num_sanity_val_steps: 0
+    limit_train_batches: 1.0
+    limit_val_batches: 1.0
+    sync_batchnorm: null
+    strategy: auto 
+
+#------------------------------------------------------------
+callbacks:
+    model_checkpoint:
+        _target_: lightning.pytorch.callbacks.ModelCheckpoint
+        dirpath: ${paths.output_dir}/checkpoints
+        filename: "epoch_{epoch:03d}"
+        monitor: "val/monitor_metric"
+        mode: "max"
+        save_last: True
+        auto_insert_metric_name: False
+        verbose: False
+        save_top_k: 1
+        save_weights_only: False
+        every_n_train_steps: null
+        train_time_interval: null
+        every_n_epochs: null
+        save_on_train_epoch_end: True
+
+    model_summary:
+        _target_: lightning.pytorch.callbacks.RichModelSummary
+        max_depth: 1
+
+    rich_progress_bar:
+        _target_: lightning.pytorch.callbacks.RichProgressBar
+        refresh_rate: 1
+
+    learning_rate_monitor:
+        _target_: lightning.pytorch.callbacks.LearningRateMonitor
+
+    timer:
+        _target_: lightning.pytorch.callbacks.Timer
+
+#------------------------------------------------------------
+logger:
+    log: True
+    wandb:
+        _target_: lightning.pytorch.loggers.wandb.WandbLogger
+        name: ${task_name}
+        save_dir: "${paths.output_dir}"
+        offline: False
+        id: null
+        anonymous: null
+        project: ${configs.wandb_project}
+        log_model: False
+        prefix: ""
+        group: ""
+        tags: []
+        job_type: ""
+
+#------------------------------------------------------------
+hydra_logging: colorlog
+job_logging: colorlog
+
+suffix_name: ''
+eval_name: null
+task_name: ${model_name}_${configs.input_type}_${configs.task}${suffix_name}
+tags: ["dev"]
+train: True
+test: True
+ckpt_path: null
+seed: 3407

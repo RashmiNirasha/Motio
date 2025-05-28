@@ -1,0 +1,19 @@
+# @package _global_
+
+paths:
+  root_dir: ${hydra:runtime.cwd}
+  exp_dir: ${paths.root_dir}/logs
+  output_dir: ${hydra:runtime.output_dir}
+  
+  root_vid: ${paths.root_dir}/data/ChildPlay-gaze
+  root_data: ${paths.root_dir}/data/childplay_hand/data
+
+extras:
+  print_config: True
+
+hydra:
+  run:
+    dir: ${paths.exp_dir}/runs/${now:%Y-%m-%d}_${now:%H-%M-%S}
+  sweep:
+    dir: ${paths.exp_dir}/multiruns/${now:%Y-%m-%d}_${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

@@ -1,0 +1,440 @@
+cat > mvp/webapp/static/mediapipe-test.html <<'HTML'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
+<title>MediaPipe Hand Test</title>
+
+<style>
+body {
+  margin: 0;
+  background: #111;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: center;
+}
+
+h1 {
+  margin-top: 18px;
+}
+
+button {
+  padding: 14px 24px;
+  font-size: 18px;
+  border: none;
+  border-radius: 12px;
+  margin: 12px;
+}
+
+#status {
+  font-size: 20px;
+  margin: 15px;
+}
+
+#details {
+  opacity: 0.8;
+  margin-bottom: 12px;
+}
+
+#wrap {
+  position: relative;
+  width: min(94vw, 800px);
+  margin: auto;
+}
+
+video {
+  width: 100%;
+  display: block;
+  border-radius: 18px;
+  background: black;
+}
+
+canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+</style>
+</head>
+
+<body>
+
+<h1>MediaPipe Hand Test</h1>
+
+<button id="start">
+  Start Camera
+</button>
+
+<div id="status">
+  Loading MediaPipe...
+</div>
+
+<div id="details">
+  —
+</div>
+
+<div id="wrap">
+
+  <video
+    id="video"
+    autoplay
+    playsinline
+    muted
+  ></video>
+
+  <canvas id="canvas"></canvas>
+
+</div>
+
+
+<script type="module">
+
+const {
+  HandLandmarker,
+  FilesetResolver,
+  DrawingUtils
+} = await import(
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0"
+);
+
+
+const video =
+  document.getElementById("video");
+
+const canvas =
+  document.getElementById("canvas");
+
+const ctx =
+  canvas.getContext("2d");
+
+const button =
+  document.getElementById("start");
+
+const status =
+  document.getElementById("status");
+
+const details =
+  document.getElementById("details");
+
+
+let handLandmarker = null;
+let drawingUtils = null;
+
+let running = false;
+let lastVideoTime = -1;
+
+
+// --------------------------------------------------
+// Load MediaPipe
+// --------------------------------------------------
+
+async function setupMediaPipe() {
+
+  try {
+
+    status.textContent =
+      "Loading MediaPipe WASM...";
+
+
+    const vision =
+      await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/wasm"
+      );
+
+
+    status.textContent =
+      "Loading hand model...";
+
+
+    handLandmarker =
+      await HandLandmarker.createFromOptions(
+        vision,
+        {
+
+          baseOptions: {
+
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+
+            delegate: "CPU"
+          },
+
+          runningMode: "VIDEO",
+
+          numHands: 1,
+
+          minHandDetectionConfidence: 0.5,
+
+          minHandPresenceConfidence: 0.5,
+
+          minTrackingConfidence: 0.5
+        }
+      );
+
+
+    drawingUtils =
+      new DrawingUtils(ctx);
+
+
+    status.textContent =
+      "✅ MediaPipe ready";
+
+    details.textContent =
+      "Press Start Camera";
+
+
+  } catch (error) {
+
+    console.error(
+      "MediaPipe setup error:",
+      error
+    );
+
+    status.textContent =
+      "❌ MediaPipe failed";
+
+    details.textContent =
+      error.message;
+  }
+}
+
+
+// --------------------------------------------------
+// Start camera
+// --------------------------------------------------
+
+button.addEventListener(
+  "click",
+  async () => {
+
+    if (!handLandmarker) {
+
+      alert(
+        "MediaPipe is still loading."
+      );
+
+      return;
+    }
+
+
+    try {
+
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+
+          video: {
+
+            facingMode: "user",
+
+            width: {
+              ideal: 1280
+            },
+
+            height: {
+              ideal: 720
+            }
+          },
+
+          audio: false
+        });
+
+
+      video.srcObject =
+        stream;
+
+
+      await video.play();
+
+
+      button.style.display =
+        "none";
+
+
+      running = true;
+
+
+      status.textContent =
+        "Looking for a hand...";
+
+
+      requestAnimationFrame(
+        detectFrame
+      );
+
+
+    } catch (error) {
+
+      console.error(
+        "Camera error:",
+        error
+      );
+
+      status.textContent =
+        "❌ Camera failed";
+
+      details.textContent =
+        error.message;
+    }
+  }
+);
+
+
+// --------------------------------------------------
+// Detection loop
+// --------------------------------------------------
+
+function detectFrame() {
+
+  if (!running) {
+    return;
+  }
+
+
+  if (
+    video.readyState >= 2 &&
+    video.currentTime !== lastVideoTime
+  ) {
+
+    lastVideoTime =
+      video.currentTime;
+
+
+    canvas.width =
+      video.videoWidth;
+
+    canvas.height =
+      video.videoHeight;
+
+
+    try {
+
+      const result =
+        handLandmarker.detectForVideo(
+          video,
+          performance.now()
+        );
+
+
+      ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+
+      if (
+        result.landmarks &&
+        result.landmarks.length > 0
+      ) {
+
+        const landmarks =
+          result.landmarks[0];
+
+
+        drawingUtils.drawConnectors(
+          landmarks,
+          HandLandmarker.HAND_CONNECTIONS,
+          {
+            color: "#00ff66",
+            lineWidth: 4
+          }
+        );
+
+
+        drawingUtils.drawLandmarks(
+          landmarks,
+          {
+            color: "#ff3b30",
+            radius: 5
+          }
+        );
+
+
+        status.textContent =
+          "✅ HAND DETECTED";
+
+
+        let handedness =
+          "Unknown";
+
+
+        if (
+          result.handedness &&
+          result.handedness.length > 0
+        ) {
+
+          handedness =
+            result.handedness[0][0].categoryName;
+        }
+
+
+        details.textContent =
+          `${landmarks.length} landmarks | ${handedness} hand`;
+
+
+        console.log(
+          "Wrist:",
+          landmarks[0]
+        );
+
+        console.log(
+          "Thumb tip:",
+          landmarks[4]
+        );
+
+        console.log(
+          "Index tip:",
+          landmarks[8]
+        );
+
+
+      } else {
+
+        status.textContent =
+          "Looking for a hand...";
+
+        details.textContent =
+          "No hand detected";
+      }
+
+
+    } catch (error) {
+
+      console.error(
+        "Detection error:",
+        error
+      );
+
+      status.textContent =
+        "❌ Detection error";
+
+      details.textContent =
+        error.message;
+    }
+  }
+
+
+  requestAnimationFrame(
+    detectFrame
+  );
+}
+
+
+// Start loading immediately
+setupMediaPipe();
+
+</script>
+
+</body>
+</html>
+HTML

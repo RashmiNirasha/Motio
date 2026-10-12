@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
+<title>ChildPlay Live AI</title>
+
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #101010;
+    color: white;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        sans-serif;
+
+    text-align: center;
+}
+
+h1 {
+    margin: 16px 0 4px;
+}
+
+.subtitle {
+    opacity: 0.65;
+}
+
+button {
+    margin: 16px;
+    padding: 14px 24px;
+    font-size: 18px;
+    border: none;
+    border-radius: 14px;
+}
+
+#cameraWrap {
+
+    position: relative;
+
+    width: min(
+        94vw,
+        800px
+    );
+
+    margin: 15px auto;
+
+    background: black;
+
+    border-radius: 18px;
+
+    overflow: hidden;
+}
+
+video {
+
+    width: 100%;
+
+    display: block;
+}
+
+canvas {
+
+    position: absolute;
+
+    inset: 0;
+
+    width: 100%;
+
+    height: 100%;
+
+    pointer-events: none;
+}
+
+
+.panel {
+
+    width: min(
+        94vw,
+        600px
+    );
+
+    margin: 14px auto;
+
+    padding: 16px;
+
+    background: #222;
+
+    border-radius: 16px;
+}
+
+
+#prediction {
+
+    font-size: 25px;
+
+    font-weight: 800;
+
+    margin: 8px;
+}
+
+
+.good {
+    color: #5aef78;
+}
+
+.bad {
+    color: #ffbe45;
+}
+
+.waiting {
+    color: #ddd;
+}
+
+
+#probability {
+
+    font-size: 19px;
+
+    margin-top: 6px;
+}
+
+
+#details {
+
+    opacity: 0.75;
+
+    font-size: 15px;
+
+    margin-top: 8px;
+}
+
+
+#barOuter {
+
+    width: 100%;
+
+    height: 15px;
+
+    background: #444;
+
+    border-radius: 10px;
+
+    overflow: hidden;
+
+    margin-top: 12px;
+}
+
+
+#barInner {
+
+    height: 100%;
+
+    width: 0%;
+
+    background: white;
+
+    transition:
+        width 0.15s;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<h1>
+ChildPlay Live AI
+</h1>
+
+<div class="subtitle">
+Child hand-object interaction monitoring
+</div>
+
+
+<button id="start">
+Start Monitoring
+</button>
+
+
+<div id="cameraWrap">
+
+<video
+    id="video"
+    autoplay
+    playsinline
+    muted>
+</video>
+
+<canvas id="canvas">
+</canvas>
+
+</div>
+
+
+<div class="panel">
+
+<div
+    id="prediction"
+    class="waiting">
+
+    Loading AI...
+
+</div>
+
+
+<div id="probability">
+    Probability: —
+</div>
+
+
+<div id="barOuter">
+
+    <div id="barInner">
+    </div>
+
+</div>
+
+
+<div id="details">
+
+    Buffer: 0 / 20
+
+</div>
+
+</div>
+
+
+<script type="module">
+
+
+const {
+    HandLandmarker,
+    FilesetResolver,
+    DrawingUtils
+} = await import(
+
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0"
+);
+
+
+// --------------------------------------------------
+// Elements
+// --------------------------------------------------
+
+const video =
+    document.getElementById(
+        "video"
+    );
+
+const canvas =
+    document.getElementById(
+        "canvas"
+    );
+
+const ctx =
+    canvas.getContext(
+        "2d"
+    );
+
+const startButton =
+    document.getElementById(
+        "start"
+    );
+
+const predictionText =
+    document.getElementById(
+        "prediction"
+    );
+
+const probabilityText =
+    document.getElementById(
+        "probability"
+    );
+
+const detailsText =
+    document.getElementById(
+        "details"
+    );
+
+const barInner =
+    document.getElementById(
+        "barInner"
+    );
+
+
+// --------------------------------------------------
+// State
+// --------------------------------------------------
+
+let handLandmarker = null;
+
+let drawingUtils = null;
+
+let running = false;
+
+let lastVideoTime = -1;
+
+
+let sequenceBuffer = [];
+
+let recentDecisions = [];
+
+let predictionInFlight = false;
+
+let lastPredictionTime = 0;
+
+
+let threshold = 0.66;
+
+let confidenceFill =
+    new Array(21).fill(0.5);
+
+
+const SEQUENCE_LENGTH = 20;
+
+
+// --------------------------------------------------
+// Fetch model configuration
+// --------------------------------------------------
+
+async function loadConfig() {
+
+    const response =
+        await fetch(
+            "/config"
+        );
+
+    const config =
+        await response.json();
+
+
+    threshold =
+        config.threshold;
+
+
+    confidenceFill =
+        config.joint_confidence_fill;
+
+
+    console.log(
+        "Model config:",
+        config
+    );
+}
+
+
+// --------------------------------------------------
+// MediaPipe
+// --------------------------------------------------
+
+async function loadMediaPipe() {
+
+    predictionText.textContent =
+        "Loading MediaPipe...";
+
+
+    const vision =
+        await FilesetResolver.forVisionTasks(
+
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/wasm"
+        );
+
+
+    handLandmarker =
+        await HandLandmarker.createFromOptions(
+
+            vision,
+
+            {
+
+                baseOptions: {
+
+                    modelAssetPath:
+
+                        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+
+                    delegate: "CPU"
+                },
+
+                runningMode:
+                    "VIDEO",
+
+                numHands: 1,
+
+                minHandDetectionConfidence:
+                    0.5,
+
+                minHandPresenceConfidence:
+                    0.5,
+
+                minTrackingConfidence:
+                    0.5
+            }
+        );
+
+
+    drawingUtils =
+        new DrawingUtils(
+            ctx
+        );
+
+
+    predictionText.textContent =
+        "Ready";
+
+    predictionText.className =
+        "waiting";
+}
+
+
+// --------------------------------------------------
+// Convert MediaPipe landmarks
+// into SAME 69 feature structure
+// used during ChildPlay training
+// --------------------------------------------------
+
+function makeFeatures(
+    landmarks,
+    handedness
+) {
+
+    const wrist =
+        landmarks[0];
+
+
+    // Bounding box from landmarks.
+    //
+    // ChildPlay originally used detector bbox.
+    // This is the closest available live equivalent.
+
+    const xs =
+        landmarks.map(
+            p => p.x
+        );
+
+    const ys =
+        landmarks.map(
+            p => p.y
+        );
+
+
+    const minX =
+        Math.min(...xs);
+
+    const maxX =
+        Math.max(...xs);
+
+    const minY =
+        Math.min(...ys);
+
+    const maxY =
+        Math.max(...ys);
+
+
+    const width =
+        Math.max(
+            maxX - minX,
+            0.000001
+        );
+
+    const height =
+        Math.max(
+            maxY - minY,
+            0.000001
+        );
+
+
+    const scale =
+        Math.max(
+            width,
+            height,
+            0.000001
+        );
+
+
+    const features = [];
+
+
+    const isLeft =
+        handedness
+            .toLowerCase()
+            .includes("left");
+
+
+    // -----------------------------
+    // 21 × [relative x,y,confidence]
+    // -----------------------------
+
+    for (
+        let i = 0;
+        i < 21;
+        i++
+    ) {
+
+        let dx =
+            (
+                landmarks[i].x
+                -
+                wrist.x
+            )
+            /
+            scale;
+
+
+        let dy =
+            (
+                landmarks[i].y
+                -
+                wrist.y
+            )
+            /
+            scale;
+
+
+        // Same canonicalization
+        // used during training.
+        if (isLeft) {
+
+            dx *= -1;
+        }
+
+
+        features.push(
+            dx
+        );
+
+        features.push(
+            dy
+        );
+
+        // Neutral confidence value
+        // from ChildPlay training mean.
+        features.push(
+            confidenceFill[i]
+        );
+    }
+
+
+    // -----------------------------
+    // Global features
+    // -----------------------------
+
+    const centerX =
+        (
+            minX + maxX
+        ) / 2;
+
+    const centerY =
+        (
+            minY + maxY
+        ) / 2;
+
+
+    features.push(
+        wrist.x
+    );
+
+    features.push(
+        wrist.y
+    );
+
+    features.push(
+        centerX
+    );
+
+    features.push(
+        centerY
+    );
+
+    features.push(
+        width
+    );
+
+    features.push(
+        height
+    );
+
+
+    return features;
+}
+
+
+// --------------------------------------------------
+// Prediction API
+// --------------------------------------------------
+
+async function runPrediction() {
+
+    if (
+        predictionInFlight
+        ||
+        sequenceBuffer.length
+            < SEQUENCE_LENGTH
+    ) {
+
+        return;
+    }
+
+
+    predictionInFlight =
+        true;
+
+
+    try {
+
+        const response =
+            await fetch(
+
+                "/predict",
+
+                {
+
+                    method:
+                        "POST",
+
+                    headers: {
+
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+
+                            sequence:
+                                sequenceBuffer
+                        })
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Prediction API error "
+                +
+                response.status
+            );
+        }
+
+
+        const result =
+            await response.json();
+
+
+        const probability =
+            result
+            .interaction_probability;
+
+
+        probabilityText.textContent =
+            "Probability: "
+            +
+            (
+                probability * 100
+            ).toFixed(1)
+            +
+            "%";
+
+
+        barInner.style.width =
+            (
+                probability * 100
+            )
+            +
+            "%";
+
+
+        const positive =
+            probability
+            >=
+            threshold;
+
+
+        recentDecisions.push(
+            positive
+        );
+
+
+        if (
+            recentDecisions.length
+            > 4
+        ) {
+
+            recentDecisions.shift();
+        }
+
+
+        const positiveCount =
+            recentDecisions.filter(
+                Boolean
+            ).length;
+
+
+        // Require 3 of last 4
+        // positive predictions.
+
+        const confirmed =
+            recentDecisions.length
+                >= 4
+            &&
+            positiveCount
+                >= 3;
+
+
+        if (confirmed) {
+
+            predictionText.textContent =
+                "OBJECT INTERACTION";
+
+            predictionText.className =
+                "good";
+
+
+        } else {
+
+            predictionText.textContent =
+                "MONITORING";
+
+            predictionText.className =
+                "bad";
+        }
+
+
+    } catch (error) {
+
+        console.error(
+            error
+        );
+
+
+        predictionText.textContent =
+            "Prediction error";
+    }
+
+
+    predictionInFlight =
+        false;
+}
+
+
+// --------------------------------------------------
+// Camera
+// --------------------------------------------------
+
+startButton.onclick =
+    async () => {
+
+
+        const stream =
+            await navigator
+                .mediaDevices
+                .getUserMedia({
+
+                    video: {
+
+                        facingMode:
+                            "user",
+
+                        width: {
+                            ideal: 1280
+                        },
+
+                        height: {
+                            ideal: 720
+                        }
+                    },
+
+                    audio:
+                        false
+                });
+
+
+        video.srcObject =
+            stream;
+
+
+        await video.play();
+
+
+        running =
+            true;
+
+
+        startButton.style.display =
+            "none";
+
+
+        predictionText.textContent =
+            "Looking for hand...";
+
+
+        requestAnimationFrame(
+            detectLoop
+        );
+    };
+
+
+// --------------------------------------------------
+// Detection loop
+// --------------------------------------------------
+
+function detectLoop() {
+
+    if (!running) {
+
+        return;
+    }
+
+
+    if (
+        video.readyState
+            >= 2
+        &&
+        video.currentTime
+            !== lastVideoTime
+    ) {
+
+        lastVideoTime =
+            video.currentTime;
+
+
+        canvas.width =
+            video.videoWidth;
+
+        canvas.height =
+            video.videoHeight;
+
+
+        const result =
+            handLandmarker
+                .detectForVideo(
+
+                    video,
+
+                    performance.now()
+                );
+
+
+        ctx.clearRect(
+
+            0,
+            0,
+
+            canvas.width,
+            canvas.height
+        );
+
+
+        if (
+            result.landmarks
+            &&
+            result.landmarks.length
+                > 0
+        ) {
+
+            const landmarks =
+                result.landmarks[0];
+
+
+            let handedness =
+                "Unknown";
+
+
+            if (
+                result.handedness
+                &&
+                result.handedness.length
+                    > 0
+            ) {
+
+                handedness =
+                    result
+                    .handedness[0][0]
+                    .categoryName;
+            }
+
+
+            drawingUtils.drawConnectors(
+
+                landmarks,
+
+                HandLandmarker
+                    .HAND_CONNECTIONS,
+
+                {
+                    color:
+                        "#00ff66",
+
+                    lineWidth:
+                        4
+                }
+            );
+
+
+            drawingUtils.drawLandmarks(
+
+                landmarks,
+
+                {
+                    color:
+                        "#ff3b30",
+
+                    radius:
+                        4
+                }
+            );
+
+
+            const features =
+                makeFeatures(
+
+                    landmarks,
+
+                    handedness
+                );
+
+
+            if (
+                features.length
+                === 69
+            ) {
+
+                sequenceBuffer.push(
+                    features
+                );
+
+
+                if (
+                    sequenceBuffer.length
+                    >
+                    SEQUENCE_LENGTH
+                ) {
+
+                    sequenceBuffer.shift();
+                }
+            }
+
+
+            detailsText.textContent =
+                "Hand: "
+                +
+                handedness
+                +
+                " | Buffer: "
+                +
+                sequenceBuffer.length
+                +
+                " / "
+                +
+                SEQUENCE_LENGTH;
+
+
+            // Run prediction roughly
+            // four times per second.
+
+            const now =
+                performance.now();
+
+
+            if (
+                sequenceBuffer.length
+                    ===
+                    SEQUENCE_LENGTH
+                &&
+                now
+                    -
+                    lastPredictionTime
+                    >
+                    250
+            ) {
+
+                lastPredictionTime =
+                    now;
+
+
+                runPrediction();
+            }
+
+
+        } else {
+
+            // Important:
+            // don't join two separated
+            // hand appearances into one
+            // temporal sequence.
+
+            sequenceBuffer = [];
+
+            recentDecisions = [];
+
+
+            predictionText.textContent =
+                "Looking for hand...";
+
+
+            probabilityText.textContent =
+                "Probability: —";
+
+
+            barInner.style.width =
+                "0%";
+
+
+            detailsText.textContent =
+                "Buffer: 0 / 20";
+        }
+    }
+
+
+    requestAnimationFrame(
+        detectLoop
+    );
+}
+
+
+// --------------------------------------------------
+// Start setup
+// --------------------------------------------------
+
+await loadConfig();
+
+await loadMediaPipe();
+
+</script>
+
+
+</body>
+
+</html>

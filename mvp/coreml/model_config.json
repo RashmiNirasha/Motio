@@ -1,0 +1,6 @@
+{
+  "sequence_length": 20,
+  "feature_dimension": 69,
+  "interaction_threshold": 0.66,
+  "confirmation_windows": 3
+}

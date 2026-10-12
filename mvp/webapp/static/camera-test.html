@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera Test</title>
+
+<style>
+body {
+    margin: 0;
+    background: #111;
+    color: white;
+    font-family: -apple-system, sans-serif;
+    text-align: center;
+}
+
+video {
+    width: 92%;
+    max-width: 800px;
+    margin-top: 20px;
+    border-radius: 18px;
+    background: black;
+}
+
+button {
+    margin-top: 25px;
+    padding: 15px 25px;
+    font-size: 20px;
+    border-radius: 12px;
+    border: none;
+}
+
+#status {
+    margin: 20px;
+    font-size: 20px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>ChildPlay Camera Test</h1>
+
+<button id="start">
+Start Camera
+</button>
+
+<div id="status">
+Camera not started
+</div>
+
+<video
+    id="video"
+    autoplay
+    playsinline
+    muted>
+</video>
+
+<script>
+
+const button =
+    document.getElementById("start");
+
+const video =
+    document.getElementById("video");
+
+const status =
+    document.getElementById("status");
+
+
+button.onclick = async () => {
+
+    try {
+
+        status.textContent =
+            "Requesting camera permission...";
+
+        const stream =
+            await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "user",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            });
+
+        video.srcObject = stream;
+
+        await video.play();
+
+        status.textContent =
+            "✅ CAMERA CONNECTED";
+
+        button.style.display =
+            "none";
+
+    } catch (error) {
+
+        console.error(error);
+
+        status.textContent =
+            "❌ Camera error: "
+            + error.name
+            + " — "
+            + error.message;
+    }
+};
+
+</script>
+
+</body>
+</html>

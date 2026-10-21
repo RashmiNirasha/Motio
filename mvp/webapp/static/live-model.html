@@ -22,6 +22,7 @@
 
 body {
     margin: 0;
+    padding: 0 12px;
     background: #101010;
     color: white;
     font-family:
@@ -40,8 +41,9 @@ h1 {
     opacity: 0.65;
 }
 
-button {
-    margin: 16px;
+button,
+select {
+    margin: 16px 6px;
     padding: 14px 24px;
     font-size: 18px;
     border: none;
@@ -49,70 +51,63 @@ button {
 }
 
 #cameraWrap {
-
     position: relative;
-
-    width: min(
-        94vw,
-        800px
-    );
-
+    width: min(94vw, 800px);
     margin: 15px auto;
-
     background: black;
-
     border-radius: 18px;
-
     overflow: hidden;
 }
 
 video {
-
     width: 100%;
-
     display: block;
 }
 
 canvas {
-
     position: absolute;
-
     inset: 0;
-
     width: 100%;
-
     height: 100%;
-
     pointer-events: none;
 }
 
 
-.panel {
-
-    width: min(
-        94vw,
-        600px
-    );
-
+#hands {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+    width: min(94vw, 800px);
     margin: 14px auto;
+}
 
+.panel {
+    flex: 1 1 300px;
     padding: 16px;
-
     background: #222;
-
     border-radius: 16px;
+    border-top: 6px solid var(--hand-color);
 }
 
+.panel.inactive {
+    opacity: 0.45;
+}
 
-#prediction {
+.handTitle {
+    font-weight: 700;
+    color: var(--hand-color);
+}
 
-    font-size: 25px;
+.metric {
+    margin-top: 14px;
+}
 
+.status {
+    font-size: 22px;
     font-weight: 800;
-
-    margin: 8px;
+    margin: 6px;
 }
-
 
 .good {
     color: #5aef78;
@@ -126,51 +121,34 @@ canvas {
     color: #ddd;
 }
 
-
-#probability {
-
-    font-size: 19px;
-
-    margin-top: 6px;
+.probability {
+    font-size: 16px;
 }
 
-
-#details {
-
-    opacity: 0.75;
-
-    font-size: 15px;
-
+.barOuter {
+    width: 100%;
+    height: 12px;
+    background: #444;
+    border-radius: 10px;
+    overflow: hidden;
     margin-top: 8px;
 }
 
+.barInner {
+    height: 100%;
+    width: 0%;
+    background: white;
+    transition: width 0.15s;
+}
 
-#barOuter {
-
-    width: 100%;
-
-    height: 15px;
-
-    background: #444;
-
-    border-radius: 10px;
-
-    overflow: hidden;
-
+.details {
+    opacity: 0.75;
+    font-size: 14px;
     margin-top: 12px;
 }
 
-
-#barInner {
-
-    height: 100%;
-
-    width: 0%;
-
-    background: white;
-
-    transition:
-        width 0.15s;
+#globalStatus {
+    opacity: 0.75;
 }
 
 </style>
@@ -186,13 +164,23 @@ ChildPlay Live AI
 </h1>
 
 <div class="subtitle">
-Child hand-object interaction monitoring
+Child hand-object interaction and pincer grasp monitoring
 </div>
 
+
+<select id="facing">
+    <option value="user">Front camera</option>
+    <option value="environment">Back camera</option>
+</select>
 
 <button id="start">
 Start Monitoring
 </button>
+
+
+<div id="globalStatus">
+Loading AI...
+</div>
 
 
 <div id="cameraWrap">
@@ -210,126 +198,134 @@ Start Monitoring
 </div>
 
 
-<div class="panel">
-
-<div
-    id="prediction"
-    class="waiting">
-
-    Loading AI...
-
+<div id="hands">
 </div>
 
 
-<div id="probability">
-    Probability: —
-</div>
+<template id="handPanel">
 
+<div class="panel inactive">
 
-<div id="barOuter">
+    <div class="handTitle">
+    </div>
 
-    <div id="barInner">
+    <div class="metric">
+        <div class="status interactionStatus waiting">—</div>
+        <div class="probability interactionProbability">Interaction: —</div>
+        <div class="barOuter"><div class="barInner interactionBar"></div></div>
+    </div>
+
+    <div class="metric">
+        <div class="status pincerStatus waiting">—</div>
+        <div class="probability pincerProbability">Pincer: —</div>
+        <div class="barOuter"><div class="barInner pincerBar"></div></div>
+    </div>
+
+    <div class="details">
+        Not visible
     </div>
 
 </div>
 
-
-<div id="details">
-
-    Buffer: 0 / 20
-
-</div>
-
-</div>
+</template>
 
 
 <script type="module">
+
+import {
+    SEQUENCE_LENGTH,
+    MEDIAPIPE_URL,
+    createHandLandmarker,
+    makeFeatures,
+    toPixelLandmarks,
+    HandTracker,
+    detectionsFromResult,
+    startCamera
+} from "./hand-tracking.js";
 
 
 const {
     HandLandmarker,
     FilesetResolver,
     DrawingUtils
-} = await import(
-
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0"
-);
+} = await import(MEDIAPIPE_URL);
 
 
 // --------------------------------------------------
 // Elements
 // --------------------------------------------------
 
-const video =
-    document.getElementById(
-        "video"
-    );
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
-const canvas =
-    document.getElementById(
-        "canvas"
-    );
-
-const ctx =
-    canvas.getContext(
-        "2d"
-    );
-
-const startButton =
-    document.getElementById(
-        "start"
-    );
-
-const predictionText =
-    document.getElementById(
-        "prediction"
-    );
-
-const probabilityText =
-    document.getElementById(
-        "probability"
-    );
-
-const detailsText =
-    document.getElementById(
-        "details"
-    );
-
-const barInner =
-    document.getElementById(
-        "barInner"
-    );
+const startButton = document.getElementById("start");
+const facingSelect = document.getElementById("facing");
+const globalStatus = document.getElementById("globalStatus");
 
 
 // --------------------------------------------------
 // State
 // --------------------------------------------------
 
+const HAND_COLORS = ["#00ff66", "#3da5ff"];
+
+const PREDICTION_INTERVAL_MS = 250;
+
 let handLandmarker = null;
-
 let drawingUtils = null;
-
 let running = false;
-
 let lastVideoTime = -1;
 
-
-let sequenceBuffer = [];
-
-let recentDecisions = [];
-
-let predictionInFlight = false;
-
-let lastPredictionTime = 0;
-
-
 let threshold = 0.66;
+let pincerThreshold = 0.5;
+let confirmationRequired = 3;
+let confirmationWindow = 4;
+let confidenceFill = new Array(21).fill(0.5);
 
-let confidenceFill =
-    new Array(21).fill(0.5);
+const tracker = new HandTracker(2);
 
 
-const SEQUENCE_LENGTH = 20;
+// One independent buffer + decision history per hand.
+const hands = tracker.slots.map(slot => {
+
+    const panel =
+        document
+            .getElementById("handPanel")
+            .content
+            .firstElementChild
+            .cloneNode(true);
+
+    panel.style.setProperty("--hand-color", HAND_COLORS[slot.id]);
+    panel.querySelector(".handTitle").textContent = `Hand ${slot.id + 1}`;
+
+    document.getElementById("hands").appendChild(panel);
+
+    return {
+        slot,
+        panel,
+        el: {
+            title: panel.querySelector(".handTitle"),
+            interactionStatus: panel.querySelector(".interactionStatus"),
+            interactionProbability: panel.querySelector(".interactionProbability"),
+            interactionBar: panel.querySelector(".interactionBar"),
+            pincerStatus: panel.querySelector(".pincerStatus"),
+            pincerProbability: panel.querySelector(".pincerProbability"),
+            pincerBar: panel.querySelector(".pincerBar"),
+            details: panel.querySelector(".details")
+        },
+        featureBuffer: [],
+        landmarkBuffer: [],
+        interactionDecisions: [],
+        pincerDecisions: [],
+        predictionInFlight: false,
+        lastPredictionTime: 0,
+        handedness: "Unknown",
+        // Bumped on reset so late responses for an
+        // earlier hand track are ignored.
+        generation: 0
+    };
+});
 
 
 // --------------------------------------------------
@@ -338,263 +334,83 @@ const SEQUENCE_LENGTH = 20;
 
 async function loadConfig() {
 
-    const response =
-        await fetch(
-            "/config"
-        );
+    const config = await (await fetch("/config")).json();
 
-    const config =
-        await response.json();
+    threshold = config.threshold;
+    pincerThreshold = config.pincer_threshold;
+    confirmationRequired = config.confirmation_required;
+    confirmationWindow = config.confirmation_window;
+    confidenceFill = config.joint_confidence_fill;
 
+    console.log("Model config:", config);
 
-    threshold =
-        config.threshold;
-
-
-    confidenceFill =
-        config.joint_confidence_fill;
-
-
-    console.log(
-        "Model config:",
-        config
-    );
+    return config;
 }
 
 
 // --------------------------------------------------
-// MediaPipe
+// Per-hand display
 // --------------------------------------------------
 
-async function loadMediaPipe() {
+function resetHand(hand) {
 
-    predictionText.textContent =
-        "Loading MediaPipe...";
+    // Important:
+    // don't join two separated
+    // hand appearances into one
+    // temporal sequence.
 
+    hand.featureBuffer = [];
+    hand.landmarkBuffer = [];
+    hand.interactionDecisions = [];
+    hand.pincerDecisions = [];
+    hand.generation += 1;
 
-    const vision =
-        await FilesetResolver.forVisionTasks(
+    const el = hand.el;
 
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/wasm"
-        );
+    hand.panel.classList.add("inactive");
+    el.title.textContent = `Hand ${hand.slot.id + 1}`;
 
-
-    handLandmarker =
-        await HandLandmarker.createFromOptions(
-
-            vision,
-
-            {
-
-                baseOptions: {
-
-                    modelAssetPath:
-
-                        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-
-                    delegate: "CPU"
-                },
-
-                runningMode:
-                    "VIDEO",
-
-                numHands: 1,
-
-                minHandDetectionConfidence:
-                    0.5,
-
-                minHandPresenceConfidence:
-                    0.5,
-
-                minTrackingConfidence:
-                    0.5
-            }
-        );
-
-
-    drawingUtils =
-        new DrawingUtils(
-            ctx
-        );
-
-
-    predictionText.textContent =
-        "Ready";
-
-    predictionText.className =
-        "waiting";
-}
-
-
-// --------------------------------------------------
-// Convert MediaPipe landmarks
-// into SAME 69 feature structure
-// used during ChildPlay training
-// --------------------------------------------------
-
-function makeFeatures(
-    landmarks,
-    handedness
-) {
-
-    const wrist =
-        landmarks[0];
-
-
-    // Bounding box from landmarks.
-    //
-    // ChildPlay originally used detector bbox.
-    // This is the closest available live equivalent.
-
-    const xs =
-        landmarks.map(
-            p => p.x
-        );
-
-    const ys =
-        landmarks.map(
-            p => p.y
-        );
-
-
-    const minX =
-        Math.min(...xs);
-
-    const maxX =
-        Math.max(...xs);
-
-    const minY =
-        Math.min(...ys);
-
-    const maxY =
-        Math.max(...ys);
-
-
-    const width =
-        Math.max(
-            maxX - minX,
-            0.000001
-        );
-
-    const height =
-        Math.max(
-            maxY - minY,
-            0.000001
-        );
-
-
-    const scale =
-        Math.max(
-            width,
-            height,
-            0.000001
-        );
-
-
-    const features = [];
-
-
-    const isLeft =
-        handedness
-            .toLowerCase()
-            .includes("left");
-
-
-    // -----------------------------
-    // 21 × [relative x,y,confidence]
-    // -----------------------------
-
-    for (
-        let i = 0;
-        i < 21;
-        i++
-    ) {
-
-        let dx =
-            (
-                landmarks[i].x
-                -
-                wrist.x
-            )
-            /
-            scale;
-
-
-        let dy =
-            (
-                landmarks[i].y
-                -
-                wrist.y
-            )
-            /
-            scale;
-
-
-        // Same canonicalization
-        // used during training.
-        if (isLeft) {
-
-            dx *= -1;
-        }
-
-
-        features.push(
-            dx
-        );
-
-        features.push(
-            dy
-        );
-
-        // Neutral confidence value
-        // from ChildPlay training mean.
-        features.push(
-            confidenceFill[i]
-        );
+    for (const [status, text, bar, name] of [
+        [el.interactionStatus, el.interactionProbability, el.interactionBar, "Interaction"],
+        [el.pincerStatus, el.pincerProbability, el.pincerBar, "Pincer"]
+    ]) {
+        status.textContent = "—";
+        status.className = "status waiting";
+        text.textContent = `${name}: —`;
+        bar.style.width = "0%";
     }
 
-
-    // -----------------------------
-    // Global features
-    // -----------------------------
-
-    const centerX =
-        (
-            minX + maxX
-        ) / 2;
-
-    const centerY =
-        (
-            minY + maxY
-        ) / 2;
+    el.details.textContent = "Not visible";
+}
 
 
-    features.push(
-        wrist.x
+// Require N of the last M positive predictions
+// before showing a positive label.
+function confirm(decisions, positive) {
+
+    decisions.push(positive);
+
+    if (decisions.length > confirmationWindow) {
+        decisions.shift();
+    }
+
+    return (
+        decisions.length >= confirmationWindow
+        &&
+        decisions.filter(Boolean).length >= confirmationRequired
     );
-
-    features.push(
-        wrist.y
-    );
-
-    features.push(
-        centerX
-    );
-
-    features.push(
-        centerY
-    );
-
-    features.push(
-        width
-    );
-
-    features.push(
-        height
-    );
+}
 
 
-    return features;
+function showMetric(status, text, bar, name, probability, confirmed, positiveLabel, extra = "") {
+
+    text.textContent =
+        `${name}: ${(probability * 100).toFixed(1)}%${extra}`;
+
+    bar.style.width = `${probability * 100}%`;
+
+    status.textContent = confirmed ? positiveLabel : `NO ${positiveLabel}`;
+    status.className = "status " + (confirmed ? "good" : "bad");
 }
 
 
@@ -602,158 +418,74 @@ function makeFeatures(
 // Prediction API
 // --------------------------------------------------
 
-async function runPrediction() {
+async function runPrediction(hand) {
 
     if (
-        predictionInFlight
+        hand.predictionInFlight
         ||
-        sequenceBuffer.length
-            < SEQUENCE_LENGTH
+        hand.featureBuffer.length < SEQUENCE_LENGTH
     ) {
-
         return;
     }
 
+    hand.predictionInFlight = true;
 
-    predictionInFlight =
-        true;
-
+    const generation = hand.generation;
 
     try {
 
-        const response =
-            await fetch(
-
-                "/predict",
-
-                {
-
-                    method:
-                        "POST",
-
-                    headers: {
-
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:
-                        JSON.stringify({
-
-                            sequence:
-                                sequenceBuffer
-                        })
-                }
-            );
-
+        const response = await fetch("/predict_hand", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sequence: hand.featureBuffer,
+                landmarks: hand.landmarkBuffer
+            })
+        });
 
         if (!response.ok) {
-
-            throw new Error(
-                "Prediction API error "
-                +
-                response.status
-            );
+            throw new Error("Prediction API error " + response.status);
         }
 
+        const result = await response.json();
 
-        const result =
-            await response.json();
+        if (generation !== hand.generation) {
+            return;
+        }
 
+        const el = hand.el;
 
-        const probability =
-            result
-            .interaction_probability;
-
-
-        probabilityText.textContent =
-            "Probability: "
-            +
-            (
-                probability * 100
-            ).toFixed(1)
-            +
-            "%";
-
-
-        barInner.style.width =
-            (
-                probability * 100
-            )
-            +
-            "%";
-
-
-        const positive =
-            probability
-            >=
-            threshold;
-
-
-        recentDecisions.push(
-            positive
+        showMetric(
+            el.interactionStatus,
+            el.interactionProbability,
+            el.interactionBar,
+            "Interaction",
+            result.interaction_probability,
+            confirm(hand.interactionDecisions, result.interaction),
+            "OBJECT INTERACTION"
         );
 
-
-        if (
-            recentDecisions.length
-            > 4
-        ) {
-
-            recentDecisions.shift();
-        }
-
-
-        const positiveCount =
-            recentDecisions.filter(
-                Boolean
-            ).length;
-
-
-        // Require 3 of last 4
-        // positive predictions.
-
-        const confirmed =
-            recentDecisions.length
-                >= 4
-            &&
-            positiveCount
-                >= 3;
-
-
-        if (confirmed) {
-
-            predictionText.textContent =
-                "OBJECT INTERACTION";
-
-            predictionText.className =
-                "good";
-
-
-        } else {
-
-            predictionText.textContent =
-                "MONITORING";
-
-            predictionText.className =
-                "bad";
-        }
-
+        showMetric(
+            el.pincerStatus,
+            el.pincerProbability,
+            el.pincerBar,
+            "Pincer",
+            result.pincer_probability,
+            confirm(hand.pincerDecisions, result.pincer),
+            "PINCER GRASP",
+            result.pincer_source === "heuristic" ? " (rule-based)" : ""
+        );
 
     } catch (error) {
 
-        console.error(
-            error
-        );
+        console.error(error);
 
+        hand.el.interactionStatus.textContent = "Prediction error";
 
-        predictionText.textContent =
-            "Prediction error";
+    } finally {
+
+        hand.predictionInFlight = false;
     }
-
-
-    predictionInFlight =
-        false;
 }
 
 
@@ -761,274 +493,130 @@ async function runPrediction() {
 // Camera
 // --------------------------------------------------
 
-startButton.onclick =
-    async () => {
+startButton.onclick = async () => {
 
+    await startCamera(video, facingSelect.value);
 
-        const stream =
-            await navigator
-                .mediaDevices
-                .getUserMedia({
+    running = true;
 
-                    video: {
+    startButton.style.display = "none";
+    facingSelect.style.display = "none";
 
-                        facingMode:
-                            "user",
+    globalStatus.textContent = "Looking for hands...";
 
-                        width: {
-                            ideal: 1280
-                        },
-
-                        height: {
-                            ideal: 720
-                        }
-                    },
-
-                    audio:
-                        false
-                });
-
-
-        video.srcObject =
-            stream;
-
-
-        await video.play();
-
-
-        running =
-            true;
-
-
-        startButton.style.display =
-            "none";
-
-
-        predictionText.textContent =
-            "Looking for hand...";
-
-
-        requestAnimationFrame(
-            detectLoop
-        );
-    };
+    requestAnimationFrame(detectLoop);
+};
 
 
 // --------------------------------------------------
 // Detection loop
 // --------------------------------------------------
 
+function drawHand(landmarks, color) {
+
+    drawingUtils.drawConnectors(
+        landmarks,
+        HandLandmarker.HAND_CONNECTIONS,
+        { color, lineWidth: 4 }
+    );
+
+    drawingUtils.drawLandmarks(
+        landmarks,
+        { color: "#ff3b30", radius: 4 }
+    );
+}
+
+
 function detectLoop() {
 
     if (!running) {
-
         return;
     }
 
-
     if (
-        video.readyState
-            >= 2
+        video.readyState >= 2
         &&
-        video.currentTime
-            !== lastVideoTime
+        video.currentTime !== lastVideoTime
     ) {
 
-        lastVideoTime =
-            video.currentTime;
+        lastVideoTime = video.currentTime;
 
-
-        canvas.width =
-            video.videoWidth;
-
-        canvas.height =
-            video.videoHeight;
-
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
 
         const result =
-            handLandmarker
-                .detectForVideo(
+            handLandmarker.detectForVideo(video, performance.now());
 
-                    video,
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                    performance.now()
-                );
+        const { matches, lost } =
+            tracker.update(detectionsFromResult(result));
 
+        for (const slot of lost) {
+            resetHand(hands[slot.id]);
+        }
 
-        ctx.clearRect(
+        const now = performance.now();
 
-            0,
-            0,
+        for (const { slot, detection } of matches) {
 
-            canvas.width,
-            canvas.height
-        );
+            const hand = hands[slot.id];
 
+            hand.handedness = detection.handedness;
+            hand.panel.classList.remove("inactive");
 
-        if (
-            result.landmarks
-            &&
-            result.landmarks.length
-                > 0
-        ) {
+            drawHand(detection.landmarks, HAND_COLORS[slot.id]);
 
-            const landmarks =
-                result.landmarks[0];
-
-
-            let handedness =
-                "Unknown";
-
-
-            if (
-                result.handedness
-                &&
-                result.handedness.length
-                    > 0
-            ) {
-
-                handedness =
-                    result
-                    .handedness[0][0]
-                    .categoryName;
-            }
-
-
-            drawingUtils.drawConnectors(
-
-                landmarks,
-
-                HandLandmarker
-                    .HAND_CONNECTIONS,
-
-                {
-                    color:
-                        "#00ff66",
-
-                    lineWidth:
-                        4
-                }
+            const features = makeFeatures(
+                detection.landmarks,
+                detection.handedness,
+                confidenceFill
             );
 
+            if (features.length === 69) {
 
-            drawingUtils.drawLandmarks(
+                hand.featureBuffer.push(features);
 
-                landmarks,
-
-                {
-                    color:
-                        "#ff3b30",
-
-                    radius:
-                        4
-                }
-            );
-
-
-            const features =
-                makeFeatures(
-
-                    landmarks,
-
-                    handedness
+                hand.landmarkBuffer.push(
+                    toPixelLandmarks(
+                        detection.landmarks,
+                        video.videoWidth,
+                        video.videoHeight
+                    )
                 );
 
-
-            if (
-                features.length
-                === 69
-            ) {
-
-                sequenceBuffer.push(
-                    features
-                );
-
-
-                if (
-                    sequenceBuffer.length
-                    >
-                    SEQUENCE_LENGTH
-                ) {
-
-                    sequenceBuffer.shift();
+                if (hand.featureBuffer.length > SEQUENCE_LENGTH) {
+                    hand.featureBuffer.shift();
+                    hand.landmarkBuffer.shift();
                 }
             }
 
+            hand.el.title.textContent =
+                `Hand ${slot.id + 1} (${detection.handedness})`;
 
-            detailsText.textContent =
-                "Hand: "
-                +
-                handedness
-                +
-                " | Buffer: "
-                +
-                sequenceBuffer.length
-                +
-                " / "
-                +
-                SEQUENCE_LENGTH;
-
+            hand.el.details.textContent =
+                `Buffer: ${hand.featureBuffer.length} / ${SEQUENCE_LENGTH}`;
 
             // Run prediction roughly
-            // four times per second.
-
-            const now =
-                performance.now();
-
+            // four times per second, per hand.
 
             if (
-                sequenceBuffer.length
-                    ===
-                    SEQUENCE_LENGTH
+                hand.featureBuffer.length === SEQUENCE_LENGTH
                 &&
-                now
-                    -
-                    lastPredictionTime
-                    >
-                    250
+                now - hand.lastPredictionTime > PREDICTION_INTERVAL_MS
             ) {
-
-                lastPredictionTime =
-                    now;
-
-
-                runPrediction();
+                hand.lastPredictionTime = now;
+                runPrediction(hand);
             }
-
-
-        } else {
-
-            // Important:
-            // don't join two separated
-            // hand appearances into one
-            // temporal sequence.
-
-            sequenceBuffer = [];
-
-            recentDecisions = [];
-
-
-            predictionText.textContent =
-                "Looking for hand...";
-
-
-            probabilityText.textContent =
-                "Probability: —";
-
-
-            barInner.style.width =
-                "0%";
-
-
-            detailsText.textContent =
-                "Buffer: 0 / 20";
         }
+
+        globalStatus.textContent =
+            matches.length === 0
+                ? "Looking for hands..."
+                : `${matches.length} hand${matches.length > 1 ? "s" : ""} visible`;
     }
 
-
-    requestAnimationFrame(
-        detectLoop
-    );
+    requestAnimationFrame(detectLoop);
 }
 
 
@@ -1036,9 +624,21 @@ function detectLoop() {
 // Start setup
 // --------------------------------------------------
 
-await loadConfig();
+hands.forEach(resetHand);
 
-await loadMediaPipe();
+const config = await loadConfig();
+
+globalStatus.textContent = "Loading MediaPipe...";
+
+handLandmarker =
+    await createHandLandmarker(HandLandmarker, FilesetResolver);
+
+drawingUtils = new DrawingUtils(ctx);
+
+globalStatus.textContent =
+    config.pincer_source === "model"
+        ? "Ready"
+        : "Ready (pincer: rule-based, no trained pincer model yet)";
 
 </script>
 

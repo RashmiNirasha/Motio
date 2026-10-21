@@ -1,466 +1,139 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0,
-             viewport-fit=cover"
-  >
+<meta charset="UTF-8">
 
-  <title>ChildPlay MVP</title>
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
 
-  <style>
-    * {
-      box-sizing: border-box;
-    }
+<title>Motio</title>
 
-    body {
-      margin: 0;
-      background: #111;
-      color: white;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      text-align: center;
-    }
 
-    h1 {
-      margin: 18px 0 4px;
-      font-size: 24px;
-    }
+<style>
 
-    #subtitle {
-      opacity: 0.7;
-      margin-bottom: 14px;
-    }
+* {
+    box-sizing: border-box;
+}
 
-    #cameraContainer {
-      position: relative;
-      width: min(94vw, 720px);
-      margin: auto;
-      background: black;
-      border-radius: 18px;
-      overflow: hidden;
-    }
+body {
+    margin: 0;
+    padding: 0 16px 40px;
+    background: #101010;
+    color: white;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        sans-serif;
 
-    video {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
+    text-align: center;
+}
 
-    canvas {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
+h1 {
+    margin: 24px 0 4px;
+}
 
-    #statusBox {
-      margin: 18px auto;
-      padding: 15px;
-      width: min(92vw, 500px);
-      background: #222;
-      border-radius: 15px;
-    }
+.subtitle {
+    opacity: 0.65;
+    margin-bottom: 20px;
+}
 
-    #status {
-      font-size: 22px;
-      font-weight: 700;
-    }
+a.card {
+    display: block;
+    width: min(100%, 520px);
+    margin: 12px auto;
+    padding: 16px;
+    background: #222;
+    border-radius: 16px;
+    color: white;
+    text-decoration: none;
+    text-align: left;
+}
 
-    #handedness {
-      margin-top: 7px;
-      font-size: 16px;
-      opacity: 0.8;
-    }
+a.card:hover {
+    background: #2c2c2c;
+}
 
-    button {
-      font-size: 18px;
-      padding: 14px 22px;
-      border: 0;
-      border-radius: 14px;
-      margin: 12px;
-      cursor: pointer;
-    }
+a.card b {
+    font-size: 18px;
+}
 
-    #startButton {
-      background: white;
-      color: black;
-    }
+a.card span {
+    display: block;
+    opacity: 0.7;
+    margin-top: 4px;
+}
 
-    .good {
-      color: #55e676;
-    }
+h2 {
+    font-size: 15px;
+    opacity: 0.6;
+    margin-top: 28px;
+}
 
-    .waiting {
-      color: #ffc857;
-    }
+.note {
+    opacity: 0.5;
+    font-size: 13px;
+    margin-top: 28px;
+}
 
-    .error {
-      color: #ff6262;
-    }
-  </style>
+</style>
+
 </head>
+
 
 <body>
 
-  <h1>ChildPlay MVP</h1>
 
-  <div id="subtitle">
-    Real-time hand monitoring
-  </div>
+<h1>
+Motio
+</h1>
 
-  <button id="startButton">
-    Start Camera
-  </button>
+<div class="subtitle">
+Child hand-object interaction and pincer grasp monitoring
+</div>
 
-  <div id="cameraContainer">
 
-    <video
-      id="video"
-      autoplay
-      playsinline
-      muted
-    ></video>
+<a class="card" href="live-model.html">
+    <b>Live monitoring</b>
+    <span>Two-hand object interaction and pincer grasp from the camera.</span>
+</a>
 
-    <canvas id="canvas"></canvas>
 
-  </div>
+<h2>Pincer training data</h2>
 
-  <div id="statusBox">
+<a class="card" href="label-pincer.html">
+    <b>Label ChildPlay clips</b>
+    <span>Label extracted child hand clips as pincer / other grasp / no grasp.</span>
+</a>
 
-    <div
-      id="status"
-      class="waiting"
-    >
-      Loading hand model...
-    </div>
+<a class="card" href="record-pincer.html">
+    <b>Record clips</b>
+    <span>Record labelled hand clips from a camera or a video file.</span>
+</a>
 
-    <div id="handedness">
-      —
-    </div>
 
-  </div>
+<h2>Diagnostics</h2>
 
+<a class="card" href="camera-test.html">
+    <b>Camera test</b>
+    <span>Check camera permissions.</span>
+</a>
 
-<script type="module">
+<a class="card" href="mediapipe-test.html">
+    <b>MediaPipe test</b>
+    <span>Check that hand landmarks are detected.</span>
+</a>
 
-import {
-  HandLandmarker,
-  FilesetResolver,
-  DrawingUtils
-} from
-"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm";
 
+<div class="note">
+Research prototype only. Not a medical or diagnostic device.
+</div>
 
-const video =
-  document.getElementById("video");
-
-const canvas =
-  document.getElementById("canvas");
-
-const ctx =
-  canvas.getContext("2d");
-
-const startButton =
-  document.getElementById("startButton");
-
-const status =
-  document.getElementById("status");
-
-const handednessText =
-  document.getElementById("handedness");
-
-
-let handLandmarker = null;
-
-let drawingUtils = null;
-
-let running = false;
-
-let lastVideoTime = -1;
-
-
-// ------------------------------------------
-// Load MediaPipe
-// ------------------------------------------
-
-async function loadHandModel() {
-
-  status.textContent =
-    "Loading hand model...";
-
-  try {
-
-    const vision =
-      await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
-      );
-
-
-    handLandmarker =
-      await HandLandmarker.createFromOptions(
-        vision,
-        {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-
-            delegate: "GPU"
-          },
-
-          runningMode: "VIDEO",
-
-          numHands: 1,
-
-          minHandDetectionConfidence: 0.5,
-
-          minHandPresenceConfidence: 0.5,
-
-          minTrackingConfidence: 0.5
-        }
-      );
-
-
-    drawingUtils =
-      new DrawingUtils(ctx);
-
-
-    status.textContent =
-      "Ready — press Start Camera";
-
-    status.className =
-      "waiting";
-
-
-  } catch (error) {
-
-    console.error(error);
-
-    status.textContent =
-      "Could not load MediaPipe";
-
-    status.className =
-      "error";
-  }
-}
-
-
-await loadHandModel();
-
-
-// ------------------------------------------
-// Start camera
-// ------------------------------------------
-
-startButton.addEventListener(
-  "click",
-  async () => {
-
-    if (!handLandmarker) {
-
-      alert(
-        "Hand model is still loading."
-      );
-
-      return;
-    }
-
-
-    try {
-
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-
-          video: {
-
-            facingMode: {
-              ideal: "environment"
-            },
-
-            width: {
-              ideal: 1280
-            },
-
-            height: {
-              ideal: 720
-            }
-          },
-
-          audio: false
-        });
-
-
-      video.srcObject =
-        stream;
-
-
-      await video.play();
-
-
-      running = true;
-
-      startButton.style.display =
-        "none";
-
-
-      status.textContent =
-        "Looking for a hand...";
-
-      status.className =
-        "waiting";
-
-
-      requestAnimationFrame(
-        detectLoop
-      );
-
-
-    } catch (error) {
-
-      console.error(error);
-
-      status.textContent =
-        "Camera access failed";
-
-      status.className =
-        "error";
-    }
-  }
-);
-
-
-// ------------------------------------------
-// Hand detection loop
-// ------------------------------------------
-
-async function detectLoop() {
-
-  if (!running) {
-    return;
-  }
-
-
-  if (
-    video.readyState >= 2 &&
-    video.currentTime !== lastVideoTime
-  ) {
-
-    lastVideoTime =
-      video.currentTime;
-
-
-    canvas.width =
-      video.videoWidth;
-
-    canvas.height =
-      video.videoHeight;
-
-
-    const timestamp =
-      performance.now();
-
-
-    const results =
-      handLandmarker.detectForVideo(
-        video,
-        timestamp
-      );
-
-
-    ctx.clearRect(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
-
-
-    if (
-      results.landmarks &&
-      results.landmarks.length > 0
-    ) {
-
-      const landmarks =
-        results.landmarks[0];
-
-
-      drawingUtils.drawConnectors(
-
-        landmarks,
-
-        HandLandmarker.HAND_CONNECTIONS,
-
-        {
-          color: "#00ff66",
-          lineWidth: 4
-        }
-      );
-
-
-      drawingUtils.drawLandmarks(
-
-        landmarks,
-
-        {
-          color: "#ff4040",
-          lineWidth: 2,
-          radius: 4
-        }
-      );
-
-
-      status.textContent =
-        "HAND DETECTED";
-
-      status.className =
-        "good";
-
-
-      if (
-        results.handedness &&
-        results.handedness.length > 0
-      ) {
-
-        const handedness =
-          results.handedness[0][0];
-
-        handednessText.textContent =
-          `${handedness.categoryName}
-           hand — ${(
-             handedness.score * 100
-           ).toFixed(0)}%`;
-
-      } else {
-
-        handednessText.textContent =
-          "Hand detected";
-      }
-
-
-    } else {
-
-      status.textContent =
-        "Looking for a hand...";
-
-      status.className =
-        "waiting";
-
-      handednessText.textContent =
-        "—";
-    }
-  }
-
-
-  requestAnimationFrame(
-    detectLoop
-  );
-}
-
-</script>
 
 </body>
+
 </html>

@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
+<title>Pincer Labeller</title>
+
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0 12px 40px;
+    background: #101010;
+    color: white;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        sans-serif;
+
+    text-align: center;
+}
+
+h1 {
+    margin: 16px 0 4px;
+}
+
+.subtitle,
+.hint {
+    opacity: 0.7;
+}
+
+.hint {
+    font-size: 14px;
+}
+
+#progress {
+    margin: 10px;
+    font-weight: 700;
+}
+
+#viewer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 14px;
+    margin: 14px auto;
+}
+
+#cropCanvas {
+    width: min(94vw, 448px);
+    aspect-ratio: 1;
+    background: black;
+    border-radius: 14px;
+}
+
+#context {
+    width: min(94vw, 480px);
+    border-radius: 14px;
+}
+
+.info {
+    width: min(94vw, 940px);
+    margin: 6px auto;
+    font-size: 15px;
+}
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin: 12px auto;
+}
+
+button,
+select {
+    padding: 12px 16px;
+    font-size: 16px;
+    border: none;
+    border-radius: 12px;
+}
+
+button.label {
+    min-width: 140px;
+    font-weight: 700;
+}
+
+button.selected {
+    outline: 3px solid #5aef78;
+}
+
+.pincer { background: #5aef78; }
+.other_grasp { background: #ffbe45; }
+.no_grasp { background: #9ab; }
+.unclear { background: #777; color: white; }
+
+#ageInfo {
+    font-weight: 700;
+}
+
+.age-under5 { color: #5aef78; }
+.age-5plus { color: #ff6b5e; }
+.age-unsure,
+.age-unchecked { color: #ffbe45; }
+
+.panel {
+    width: min(94vw, 700px);
+    margin: 14px auto;
+    padding: 16px;
+    background: #222;
+    border-radius: 16px;
+    text-align: left;
+    font-size: 14px;
+}
+
+kbd {
+    background: #444;
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<h1>
+Pincer Labeller
+</h1>
+
+<div class="subtitle">
+Label ChildPlay hand clips. Judge the stable holding phase:
+does thumb–index opposition control the object?
+</div>
+
+
+<div class="controls">
+
+    <select id="filter">
+        <option value="unlabelled">Unlabelled only</option>
+        <option value="all">All candidates</option>
+        <option value="pincer">Labelled pincer</option>
+        <option value="other_grasp">Labelled other grasp</option>
+        <option value="no_grasp">Labelled no grasp</option>
+        <option value="unclear">Labelled unclear</option>
+    </select>
+
+    <select id="ageFilter">
+        <option value="young">Age: under 5 or not yet checked</option>
+        <option value="under5">Age: confirmed under 5 only</option>
+        <option value="all">Age: all children</option>
+    </select>
+
+    <select id="speed">
+        <option value="0.25">0.25× speed</option>
+        <option value="0.5" selected>0.5× speed</option>
+        <option value="1">1× speed</option>
+    </select>
+
+    <label>
+        <input id="showLandmarks" type="checkbox" checked>
+        Show MediaPipe landmarks
+    </label>
+
+</div>
+
+
+<div id="progress">
+Loading...
+</div>
+
+
+<div id="viewer">
+
+<canvas id="cropCanvas" width="448" height="448">
+</canvas>
+
+<img id="context" alt="Whole scene, hand in green box">
+
+</div>
+
+
+<div class="info" id="info">
+</div>
+
+<div class="info" id="ageInfo">
+</div>
+
+<div class="info hint" id="mediapipeInfo">
+</div>
+
+
+<div class="controls">
+    <button class="label pincer" data-label="pincer">1 · Pincer</button>
+    <button class="label other_grasp" data-label="other_grasp">2 · Other grasp</button>
+    <button class="label no_grasp" data-label="no_grasp">3 · No grasp</button>
+    <button class="label unclear" data-label="unclear">4 · Unclear</button>
+</div>
+
+<div class="controls">
+
+    <button class="age" data-age="under5">Y · Video child under 5</button>
+    <button class="age" data-age="5plus">O · 5 or older</button>
+    <button class="age" data-age="unsure">N · Not sure of age</button>
+
+</div>
+
+<div class="controls">
+
+    <button id="prev">← Previous</button>
+    <button id="pause">Pause (Space)</button>
+    <button id="next">Next →</button>
+
+</div>
+
+
+<div class="panel">
+
+    <b>How to label</b>
+
+    <ul>
+        <li><b>Pincer</b>: the object is held mainly between the pads or tips of the thumb and index finger (neat or inferior pincer).</li>
+        <li><b>Other grasp</b>: palmar, raking, whole-hand or multi-finger grasp; object enclosed by the palm or several fingers.</li>
+        <li><b>No grasp</b>: the hand is touching or near the object but not holding it.</li>
+        <li><b>Unclear</b>: thumb or index hidden, blur, or you are unsure. Unclear clips are not used for training, so use this freely.</li>
+    </ul>
+
+    <p>
+        All clips are children (ChildPlay's own child/adult annotation).
+        ChildPlay has no ages, so <b>confirm the age once per video</b> from the whole-scene picture:
+        it applies to every clip from that video. The title-based hint is only a suggestion.
+        Videos marked 5 or older are hidden by default and left out by
+        <code>train_pincer.py --under-5-only</code>.
+    </p>
+
+    <p>
+        Keys: <kbd>1</kbd>–<kbd>4</kbd> label and go to next,
+        <kbd>Y</kbd>/<kbd>O</kbd>/<kbd>N</kbd> video age,
+        <kbd>←</kbd>/<kbd>→</kbd> previous/next,
+        <kbd>Space</kbd> pause, <kbd>,</kbd>/<kbd>.</kbd> step one frame when paused.
+    </p>
+
+    <p class="hint">
+        Clips are only used for training where MediaPipe also found the hand in
+        at least 20 consecutive frames, because the live app runs on MediaPipe landmarks.
+    </p>
+
+</div>
+
+
+<script type="module">
+
+import {
+    MEDIAPIPE_URL,
+    createHandLandmarker,
+    toPixelLandmarks
+} from "./hand-tracking.js";
+
+
+const {
+    HandLandmarker,
+    FilesetResolver,
+    DrawingUtils
+} = await import(MEDIAPIPE_URL);
+
+
+// --------------------------------------------------
+// Elements
+// --------------------------------------------------
+
+const canvas = document.getElementById("cropCanvas");
+const ctx = canvas.getContext("2d");
+const contextImage = document.getElementById("context");
+
+const filterSelect = document.getElementById("filter");
+const ageFilterSelect = document.getElementById("ageFilter");
+const ageInfo = document.getElementById("ageInfo");
+const speedSelect = document.getElementById("speed");
+const showLandmarks = document.getElementById("showLandmarks");
+const progressText = document.getElementById("progress");
+const infoText = document.getElementById("info");
+const mediapipeInfo = document.getElementById("mediapipeInfo");
+const pauseButton = document.getElementById("pause");
+
+const labelButtons = [...document.querySelectorAll("button.label")];
+const ageButtons = [...document.querySelectorAll("button.age")];
+
+
+// --------------------------------------------------
+// State
+// --------------------------------------------------
+
+// ChildPlay clips used here are 24–30 fps.
+const SOURCE_FPS = 25;
+
+let handLandmarker = null;
+let drawingUtils = null;
+
+let candidates = [];
+let queue = [];
+let position = 0;
+
+let current = null;
+let loadToken = 0;
+
+let frameIndex = 0;
+let paused = false;
+let lastFrameTime = 0;
+
+// MediaPipe VIDEO mode needs increasing timestamps
+// across all candidates.
+let mediapipeTime = 0;
+
+const blankCanvas = document.createElement("canvas");
+blankCanvas.width = 224;
+blankCanvas.height = 224;
+blankCanvas.getContext("2d").fillRect(0, 0, 224, 224);
+
+
+// --------------------------------------------------
+// Candidate list
+// --------------------------------------------------
+
+async function loadCandidates() {
+
+    candidates = await (await fetch("/pincer_candidates")).json();
+}
+
+
+function buildQueue(keepId) {
+
+    const filter = filterSelect.value;
+    const ageFilter = ageFilterSelect.value;
+
+    queue = candidates.filter(c =>
+        (
+            filter === "all"
+            || (filter === "unlabelled" && !c.label)
+            || c.label === filter
+        )
+        &&
+        (
+            ageFilter === "all"
+            || (ageFilter === "under5" && c.age_band === "under5")
+            || (ageFilter === "young" && c.age_band !== "5plus")
+        )
+    );
+
+    position = Math.max(0, queue.findIndex(c => c.candidate_id === keepId));
+}
+
+
+function updateProgress() {
+
+    const visible = candidates.filter(c =>
+        ageFilterSelect.value === "all"
+        || (ageFilterSelect.value === "under5" && c.age_band === "under5")
+        || (ageFilterSelect.value === "young" && c.age_band !== "5plus"));
+
+    const labelled = visible.filter(c => c.label);
+
+    const counts = {};
+    for (const c of labelled) {
+        counts[c.label] = (counts[c.label] || 0) + 1;
+    }
+
+    progressText.textContent =
+        `Labelled ${labelled.length} / ${visible.length}`
+        + ` · pincer ${counts.pincer || 0}`
+        + ` · other ${counts.other_grasp || 0}`
+        + ` · no grasp ${counts.no_grasp || 0}`
+        + ` · unclear ${counts.unclear || 0}`
+        + (queue.length ? ` · showing ${position + 1} of ${queue.length}` : "");
+}
+
+
+// --------------------------------------------------
+// Load one candidate: frames + MediaPipe landmarks
+// --------------------------------------------------
+
+function loadImage(src) {
+
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = src;
+    });
+}
+
+
+function pickCentralHand(result) {
+
+    // The crop is centred on the annotated hand;
+    // ignore any other hand that is also in view.
+    let best = null;
+    let bestDistance = Infinity;
+
+    for (const landmarks of result.landmarks || []) {
+
+        const cx = landmarks.reduce((s, p) => s + p.x, 0) / landmarks.length;
+        const cy = landmarks.reduce((s, p) => s + p.y, 0) / landmarks.length;
+        const distance = Math.hypot(cx - 0.5, cy - 0.5);
+
+        if (distance < bestDistance) {
+            best = landmarks;
+            bestDistance = distance;
+        }
+    }
+
+    return best;
+}
+
+
+async function showCandidate() {
+
+    const token = ++loadToken;
+
+    labelButtons.forEach(b => b.classList.remove("selected"));
+
+    if (!queue.length) {
+        current = null;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        contextImage.removeAttribute("src");
+        infoText.textContent = "No candidates in this view.";
+        mediapipeInfo.textContent = "";
+        ageInfo.textContent = "";
+        updateProgress();
+        return;
+    }
+
+    const candidate = queue[position];
+    const base = `/candidates/${encodeURIComponent(candidate.candidate_id)}`;
+
+    infoText.textContent = "Loading frames...";
+    updateProgress();
+
+    const frames = await Promise.all(
+        Array.from(
+            { length: candidate.n_frames },
+            (_, i) => loadImage(`${base}/frame_${String(i).padStart(3, "0")}.jpg`)
+        )
+    );
+
+    if (token !== loadToken) {
+        return;
+    }
+
+    contextImage.src = `${base}/context.jpg`;
+
+    // Blank frames end MediaPipe's tracking, so the
+    // previous candidate's hand doesn't carry over.
+    for (let i = 0; i < 2; i++) {
+        mediapipeTime += 1000;
+        handLandmarker.detectForVideo(blankCanvas, mediapipeTime);
+    }
+
+    const landmarks = frames.map(image => {
+        mediapipeTime += 1000 / SOURCE_FPS;
+        return pickCentralHand(handLandmarker.detectForVideo(image, mediapipeTime));
+    });
+
+    current = { candidate, frames, landmarks };
+    frameIndex = 0;
+
+    const found = landmarks.filter(Boolean).length;
+
+    let longestRun = 0;
+    let run = 0;
+    for (const l of landmarks) {
+        run = l ? run + 1 : 0;
+        longestRun = Math.max(longestRun, run);
+    }
+
+    const actions = Object.entries(candidate.actions)
+        .map(([action, n]) => `${action} ${n}`)
+        .join(", ");
+
+    infoText.textContent =
+        `${candidate.candidate_id} · ${candidate.hand} hand · ${candidate.n_frames} frames · ChildPlay: ${actions}`
+        + (candidate.label ? ` · current label: ${candidate.label}` : "");
+
+    showAge(candidate);
+
+    mediapipeInfo.textContent =
+        `MediaPipe found the hand in ${found}/${landmarks.length} frames`
+        + (longestRun >= 20 ? "" : " · fewer than 20 consecutive, so this clip won't be used for training");
+
+    labelButtons.forEach(b =>
+        b.classList.toggle("selected", b.dataset.label === candidate.label));
+}
+
+
+// --------------------------------------------------
+// Video age (one decision per source video)
+// --------------------------------------------------
+
+const AGE_TEXT = {
+    under5: "under 5",
+    "5plus": "5 or older",
+    unsure: "not sure"
+};
+
+function showAge(candidate) {
+
+    const band = candidate.age_band || "unchecked";
+
+    const hint =
+        candidate.age_hint === "unknown"
+            ? "title gives no age hint"
+            : `title hint: ${candidate.age_hint.replace("_", " ")}`
+              + (candidate.age_reasons.length ? ` (${candidate.age_reasons.slice(0, 4).join(", ")})` : "");
+
+    ageInfo.className = "info age-" + band;
+
+    ageInfo.textContent =
+        `Video "${candidate.video_title}" · age: `
+        + (candidate.age_band ? AGE_TEXT[band] : "not confirmed yet, press Y / O / N")
+        + ` · ${hint}`;
+
+    ageButtons.forEach(b =>
+        b.classList.toggle("selected", b.dataset.age === candidate.age_band));
+}
+
+
+async function setVideoAge(ageBand) {
+
+    if (!current) {
+        return;
+    }
+
+    const videoId = current.candidate.video_id;
+
+    const response = await fetch("/video_age", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_id: videoId, age_band: ageBand })
+    });
+
+    if (!response.ok) {
+        ageInfo.textContent = "Save failed: " + (await response.text());
+        return;
+    }
+
+    for (const c of candidates) {
+        if (c.video_id === videoId) {
+            c.age_band = ageBand;
+        }
+    }
+
+    // A video marked 5+ drops out of the default view.
+    if (ageBand === "5plus" && ageFilterSelect.value !== "all") {
+        buildQueue();
+        showCandidate();
+        return;
+    }
+
+    showAge(current.candidate);
+    updateProgress();
+}
+
+
+// --------------------------------------------------
+// Playback
+// --------------------------------------------------
+
+function drawFrame() {
+
+    if (!current) {
+        return;
+    }
+
+    ctx.drawImage(current.frames[frameIndex], 0, 0, canvas.width, canvas.height);
+
+    const landmarks = current.landmarks[frameIndex];
+
+    if (showLandmarks.checked && landmarks) {
+
+        drawingUtils.drawConnectors(
+            landmarks,
+            HandLandmarker.HAND_CONNECTIONS,
+            { color: "#00ff66", lineWidth: 2 }
+        );
+
+        drawingUtils.drawLandmarks(
+            landmarks,
+            { color: "#ff3b30", radius: 2 }
+        );
+    }
+
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, 0, 90, 26);
+    ctx.fillStyle = "white";
+    ctx.font = "16px sans-serif";
+    ctx.fillText(`${frameIndex + 1}/${current.frames.length}`, 8, 19);
+}
+
+
+function playLoop(now) {
+
+    const interval = 1000 / (SOURCE_FPS * Number(speedSelect.value));
+
+    if (current && !paused && now - lastFrameTime >= interval) {
+        lastFrameTime = now;
+        frameIndex = (frameIndex + 1) % current.frames.length;
+    }
+
+    drawFrame();
+
+    requestAnimationFrame(playLoop);
+}
+
+
+// --------------------------------------------------
+// Labelling
+// --------------------------------------------------
+
+async function saveLabel(label) {
+
+    if (!current) {
+        return;
+    }
+
+    const { candidate, landmarks } = current;
+
+    const response = await fetch("/pincer_label", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            candidate_id: candidate.candidate_id,
+            label,
+            landmarks: landmarks.map(l => l ? toPixelLandmarks(l, 224, 224) : null)
+        })
+    });
+
+    if (!response.ok) {
+        infoText.textContent = "Save failed: " + (await response.text());
+        return;
+    }
+
+    Object.assign(candidate, await response.json());
+
+    // In the "unlabelled" view the labelled clip
+    // drops out of the queue, so stay at this index.
+    if (filterSelect.value === "unlabelled") {
+        queue.splice(position, 1);
+        position = Math.min(position, Math.max(queue.length - 1, 0));
+    } else {
+        position = Math.min(position + 1, queue.length - 1);
+    }
+
+    showCandidate();
+}
+
+
+function move(step) {
+
+    if (!queue.length) {
+        return;
+    }
+
+    position = (position + step + queue.length) % queue.length;
+    showCandidate();
+}
+
+
+function togglePause() {
+
+    paused = !paused;
+    pauseButton.textContent = paused ? "Play (Space)" : "Pause (Space)";
+}
+
+
+labelButtons.forEach(button => {
+    button.onclick = () => saveLabel(button.dataset.label);
+});
+
+document.getElementById("prev").onclick = () => move(-1);
+document.getElementById("next").onclick = () => move(1);
+pauseButton.onclick = togglePause;
+
+ageButtons.forEach(button => {
+    button.onclick = () => setVideoAge(button.dataset.age);
+});
+
+filterSelect.onchange = ageFilterSelect.onchange = () => {
+    buildQueue(current && current.candidate.candidate_id);
+    showCandidate();
+};
+
+
+const LABEL_KEYS = {
+    "1": "pincer",
+    "2": "other_grasp",
+    "3": "no_grasp",
+    "4": "unclear"
+};
+
+const AGE_KEYS = {
+    y: "under5",
+    o: "5plus",
+    n: "unsure"
+};
+
+document.addEventListener("keydown", event => {
+
+    if (event.target.tagName === "SELECT") {
+        return;
+    }
+
+    const key = event.key.toLowerCase();
+
+    if (LABEL_KEYS[key]) {
+        saveLabel(LABEL_KEYS[key]);
+    } else if (AGE_KEYS[key]) {
+        setVideoAge(AGE_KEYS[key]);
+    } else if (key === "arrowright") {
+        move(1);
+    } else if (key === "arrowleft") {
+        move(-1);
+    } else if (key === " ") {
+        event.preventDefault();
+        togglePause();
+    } else if (current && paused && (key === "," || key === ".")) {
+        const n = current.frames.length;
+        frameIndex = (frameIndex + (key === "." ? 1 : -1) + n) % n;
+    }
+});
+
+
+// --------------------------------------------------
+// Start setup
+// --------------------------------------------------
+
+progressText.textContent = "Loading MediaPipe...";
+
+handLandmarker =
+    await createHandLandmarker(HandLandmarker, FilesetResolver);
+
+drawingUtils = new DrawingUtils(ctx);
+
+await loadCandidates();
+
+if (!candidates.length) {
+    progressText.textContent =
+        "No candidates found. Run python mvp/extract_pincer_candidates.py first.";
+} else {
+    buildQueue();
+    showCandidate();
+    requestAnimationFrame(playLoop);
+}
+
+</script>
+
+
+</body>
+
+</html>

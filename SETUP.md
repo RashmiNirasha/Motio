@@ -1,382 +1,112 @@
-# Setup and Run Guide
+# Setup Guide
 
-This project is a research MVP for real-time child hand-object interaction monitoring using the ChildPlay-Hand dataset, MediaPipe, a temporal PyTorch model, FastAPI, and a browser-based camera interface.
+Environment and data setup for Motio. For how to run and use the system, see [README.md](README.md).
 
-> This is a prototyping and analysis project, not a medical device.
-
----
-
-## 1. Clone the repository
+## 1. Clone
 
 ```bash
 git clone https://github.com/RashmiNirasha/Motio.git
-cd childplay_hand
+cd Motio
+git lfs pull   # dataset arrays, Core ML weights and figures are stored with Git LFS
 ```
 
----
+## 2. Conda environments
 
-## 2. Create the main dataset/training environment
+Three environments are used.
 
-Use the primary environment for dataset exploration, temporal dataset generation, and model training.
+### `childplay_hand`: datasets and training
 
 ```bash
-conda create -n childplay_hand python=3.10 -y
+conda create -n childplay_hand python=3.8 -y
 conda activate childplay_hand
-```
-
-Install the project dependencies:
-
-```bash
 pip install -r requirements.txt
+pip install torch
 ```
 
-If you are reproducing the original ChildPlay model pipeline, ensure the environment includes PyTorch and the required scientific Python stack from the repository requirements.
+`requirements.txt` also covers the original ChildPlay-Hand baseline code in `src/`.
 
----
-
-## 3. Create the Core ML / FastAPI environment
-
-This environment is used for the browser-based MVP, the FastAPI server, and the Core ML conversion step.
+### `childplay_coreml`: web server and Core ML
 
 ```bash
 conda create -n childplay_coreml python=3.11 -y
 conda activate childplay_coreml
+pip install fastapi uvicorn numpy torch
+pip install coremltools   # only for mvp/convert_to_coreml.py
 ```
 
-Install the runtime dependencies needed for the server and model serving:
+### `childplay_download`: source videos
 
 ```bash
-pip install fastapi uvicorn numpy pandas torch
-```
-
-If you want the full repository environment to match the development setup, install the project requirements as well:
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## 4. Create the download environment
-
-This environment is used for source-video downloading tasks when needed.
-
-```bash
-conda create -n childplay_download python=3.10 -y
+conda create -n childplay_download python=3.11 -y
 conda activate childplay_download
-```
-
-Install download tooling used by the project:
-
-```bash
 pip install yt-dlp
 ```
 
----
-
-## 5. Rebuild the temporal dataset
-
-From the repository root:
-
-```bash
-conda activate childplay_hand
-python mvp/build_temporal_dataset_v2.py
-```
-
-This writes the generated dataset arrays and metadata to:
-
-```text
-mvp/dataset_v2/
-```
-
-The current dataset format is:
-
-```text
-20 x 69
-```
-
-where the 69 features are:
-
-- 21 hand landmarks × (x, y, confidence) = 63 features
-- wrist x, wrist y = 2 features
-- bounding-box center x, center y = 2 features
-- bounding-box width, height = 2 features
-
----
-
-## 6. Train the binary interaction model
-
-```bash
-conda activate childplay_hand
-python mvp/train_binary_mvp.py
-```
-
-The trained model is saved at:
-
-```text
-mvp/models_binary/child_object_interaction.pt
-```
-
----
-
-## 7. Tune the decision threshold
-
-```bash
-conda activate childplay_hand
-python mvp/tune_binary_threshold.py
-```
-
-The chosen web/iPhone MVP threshold is stored in:
-
-```text
-mvp/models_binary/iphone_threshold.txt
-```
-
-The current threshold is:
-
-```text
-0.66
-```
-
----
-
-## 8. Convert to Core ML (optional)
-
-This is optional and mainly relevant to future native iOS deployment work.
-
-```bash
-conda activate childplay_coreml
-python mvp/convert_to_coreml.py
-```
-
-The generated model package is written to:
-
-```text
-mvp/coreml/ChildObjectInteraction.mlpackage
-```
-
----
-
-## 9. Start the FastAPI app for the MVP
-
-Use two terminals.
-
-### Terminal 1 — start the API server
-
-```bash
-cd /path/to/childplay_hand
-conda activate childplay_coreml
-
-python -m uvicorn mvp.webapp.server:app \
-  --host 0.0.0.0 \
-  --port 8000
-```
-
-Expected startup output includes:
-
-```text
-Loading model...
-Model loaded.
-Threshold: 0.66
-Serving frontend from:
-.../mvp/webapp/static
-```
-
-Then verify the backend locally:
-
-```text
-http://127.0.0.1:8000/health
-```
-
-and:
-
-```text
-http://127.0.0.1:8000/config
-```
-
----
-
-## 10. Open the browser test pages
-
-Once the server is running, open the pages below in the browser:
-
-### Camera only
-
-```text
-http://127.0.0.1:8000/app/camera-test.html
-```
-
-### MediaPipe landmarks only
-
-```text
-http://127.0.0.1:8000/app/mediapipe-test.html
-```
-
-### Full live model
-
-```text
-http://127.0.0.1:8000/app/live-model.html
-```
-
-This page performs:
-
-```text
-camera -> MediaPipe -> 69-feature extraction -> 20-frame buffer -> /predict -> PyTorch model -> probability
-```
-
----
-
-## 11. Use the live model on an iPhone
-
-Mobile Safari requires HTTPS for camera access. Use a temporary Cloudflare tunnel.
-
-### Install Cloudflare Tunnel once
+### Cloudflare Tunnel (for the iPhone camera)
 
 ```bash
 brew install cloudflared
 ```
 
-### Start the tunnel
+## 3. ChildPlay data
+
+The data is not in Git. Download it as described in [data/README.md](data/README.md), so that you have:
+
+```text
+data/
+├── childplay_hand/data/
+│   ├── annotations/{train,val,test}/*.csv
+│   └── pose/cp_pose_{train,val,test}.pkl
+└── ChildPlay-gaze/
+    ├── annotations/{train,val,test}/*.csv   (provides is_child)
+    ├── clips.csv
+    ├── videos.csv
+    └── videos/*.mp4
+```
+
+If the data already lives elsewhere, symlink it instead of copying:
 
 ```bash
-cloudflared tunnel --url http://localhost:8000
+ln -s /path/to/childplay_hand data/childplay_hand
+ln -s /path/to/ChildPlay-gaze data/ChildPlay-gaze
 ```
 
-This returns a temporary HTTPS address, for example:
+Only `annotations` and `pose` are needed to rebuild the interaction model. The source `videos/` are needed only for pincer candidate extraction (`mvp/download_childplay_videos.sh` fetches missing ones).
 
-```text
-https://random-words.trycloudflare.com
-```
+## 4. Interaction model (optional rebuild)
 
-Open the following on the iPhone:
-
-```text
-https://YOUR-TUNNEL.trycloudflare.com/app/live-model.html
-```
-
-Then tap:
-
-```text
-Start Monitoring
-```
-
-and allow camera access.
-
----
-
-## 12. Quick restart workflow
-
-After restarting the computer:
-
-### Terminal 1
+The prebuilt dataset (`mvp/dataset_v2/`) and normalization files are in Git. Only the checkpoint `child_object_interaction.pt` is not, so train it once:
 
 ```bash
-cd /path/to/childplay_hand
+conda activate childplay_hand
+python mvp/train_binary_mvp.py        # → mvp/models_binary/child_object_interaction.pt
+python mvp/tune_binary_threshold.py   # → mvp/models_binary/iphone_threshold.txt
+```
+
+To rebuild the dataset from ChildPlay first:
+
+```bash
+python mvp/build_temporal_dataset_v2.py   # → mvp/dataset_v2/
+```
+
+## 5. Core ML export (optional)
+
+For future native iOS work only; the web app does not need it.
+
+```bash
 conda activate childplay_coreml
-
-python -m uvicorn mvp.webapp.server:app \
-  --host 0.0.0.0 \
-  --port 8000
+python mvp/convert_to_coreml.py   # → mvp/coreml/ChildObjectInteraction.mlpackage
 ```
 
-### Terminal 2
+## 6. Pincer model
+
+There is no pretrained pincer model. The server uses a rule-based check until you label data and train one. See [Pincer grasp workflow](README.md#pincer-grasp-workflow) in the README.
+
+## 7. Check the server
 
 ```bash
-cloudflared tunnel --url http://localhost:8000
+conda activate childplay_coreml
+python -m uvicorn mvp.webapp.server:app --host 0.0.0.0 --port 8000
 ```
 
-Then use the generated HTTPS URL on the phone to open the live model page.
-
----
-
-## 13. API contract
-
-### `GET /`
-
-Basic service status.
-
-### `GET /health`
-
-Returns model status and configuration metadata.
-
-### `GET /config`
-
-Returns:
-
-- sequence length
-- feature dimension
-- threshold
-- confirmation settings
-- confidence-channel fill values
-
-### `POST /predict`
-
-Input:
-
-```json
-{
-  "sequence": [
-    [69 values],
-    [69 values]
-  ]
-}
-```
-
-Exactly 20 frames are required:
-
-```text
-[20, 69]
-```
-
-Example output:
-
-```json
-{
-  "interaction_probability": 0.73,
-  "threshold": 0.66,
-  "interaction": true,
-  "label": "object_interaction"
-}
-```
-
----
-
-## 14. Dataset and redistribution notes
-
-This project depends on the ChildPlay-Hand dataset from the original researchers. The repository should not redistribute raw videos or source dataset materials unless the relevant data licensing and terms permit redistribution.
-
-Users should download required data from the original sources and follow the dataset's usage terms.
-
-Large generated datasets, downloaded source videos, model checkpoints, and temporary outputs should usually be excluded from Git where appropriate.
-
----
-
-## 15. Known limitations
-
-The current model is a prototype MVP and has the following limitations:
-
-- moderate precision and lower recall at the chosen threshold
-- different pose-estimation systems are used for training data vs live MediaPipe data
-- object identity is not explicitly modeled
-- the classifier detects broad object interaction rather than fine-grained grasp types
-- live phone-camera performance still needs systematic evaluation
-- the system is not clinically validated
-
----
-
-## 16. Recommended evaluation checklist
-
-Test the model under several conditions:
-
-1. stationary open hand
-2. moving empty hand
-3. reaching toward an object
-4. picking up an object
-5. holding an object
-6. releasing an object
-7. different object sizes
-8. different camera distances
-9. different participants
-10. different lighting/backgrounds
-
-Record the interaction probability and confirm whether the decision remains stable across these scenarios.
+http://127.0.0.1:8000/health should return `"status": "ok"`. With the server running, `python mvp/webapp/test_server.py` sends two test sequences to `/predict`.

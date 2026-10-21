@@ -1,8 +1,0 @@
-{
-  "background": 0,
-  "grasp": 1,
-  "hold": 2,
-  "release": 3,
-  "point": 4,
-  "other": 5
-}

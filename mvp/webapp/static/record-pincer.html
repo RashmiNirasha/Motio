@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
+<title>Pincer Recorder</title>
+
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0 12px 40px;
+    background: #101010;
+    color: white;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        sans-serif;
+
+    text-align: center;
+}
+
+h1 {
+    margin: 16px 0 4px;
+}
+
+.subtitle {
+    opacity: 0.65;
+    max-width: 640px;
+    margin: 0 auto;
+}
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    width: min(94vw, 800px);
+    margin: 16px auto;
+}
+
+button,
+select,
+input {
+    padding: 12px 16px;
+    font-size: 16px;
+    border: none;
+    border-radius: 12px;
+}
+
+input[type="file"] {
+    background: #222;
+    color: white;
+    max-width: 100%;
+}
+
+#record {
+    font-size: 20px;
+    font-weight: 800;
+    padding: 16px 32px;
+}
+
+#record.recording {
+    background: #ff3b30;
+    color: white;
+}
+
+#cameraWrap {
+    position: relative;
+    width: min(94vw, 800px);
+    margin: 15px auto;
+    background: black;
+    border-radius: 18px;
+    overflow: hidden;
+}
+
+video {
+    width: 100%;
+    display: block;
+}
+
+canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* Leave the video controls clickable. */
+#cameraWrap.fileMode canvas {
+    height: calc(100% - 48px);
+}
+
+.panel {
+    width: min(94vw, 600px);
+    margin: 14px auto;
+    padding: 16px;
+    background: #222;
+    border-radius: 16px;
+    text-align: left;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+td,
+th {
+    padding: 6px;
+    text-align: left;
+    border-bottom: 1px solid #333;
+}
+
+#status {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 8px;
+}
+
+.hint {
+    opacity: 0.7;
+    font-size: 14px;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<h1>
+Pincer Recorder
+</h1>
+
+<div class="subtitle">
+Record labelled hand clips to train the pincer-grasp model.
+Pick a label, press Record while that grasp is happening, and stop when it ends.
+</div>
+
+
+<div class="controls">
+
+    <select id="source">
+        <option value="user">Front camera</option>
+        <option value="environment">Back camera</option>
+        <option value="file">Video file</option>
+    </select>
+
+    <input id="file" type="file" accept="video/*" hidden>
+
+    <select id="rate" hidden>
+        <option value="0.25">0.25× speed</option>
+        <option value="0.5" selected>0.5× speed</option>
+        <option value="1">1× speed</option>
+    </select>
+
+    <button id="start">
+        Start
+    </button>
+
+</div>
+
+
+<div class="controls">
+
+    <label>
+        Session / child
+        <input id="session" type="text" size="18">
+    </label>
+
+    <select id="label">
+        <option value="pincer">Pincer grasp</option>
+        <option value="other_grasp">Other grasp (palmar, raking, whole hand)</option>
+        <option value="no_grasp">No grasp (open, reaching, resting)</option>
+    </select>
+
+    <select id="handFilter">
+        <option value="all">All visible hands</option>
+        <option value="left">Hand on screen left</option>
+        <option value="right">Hand on screen right</option>
+    </select>
+
+</div>
+
+
+<div class="controls">
+
+    <button id="record" disabled>
+        ● Record
+    </button>
+
+</div>
+
+<div class="hint">
+Space bar toggles recording. Only hands matching the filter are saved.
+</div>
+
+
+<div id="status">
+Loading MediaPipe...
+</div>
+
+
+<div id="cameraWrap">
+
+<video
+    id="video"
+    autoplay
+    playsinline
+    muted>
+</video>
+
+<canvas id="canvas">
+</canvas>
+
+</div>
+
+
+<div class="panel">
+
+    <b>Recorded data</b>
+
+    <table>
+        <thead>
+            <tr><th>Label</th><th>Clips</th><th>Frames</th></tr>
+        </thead>
+        <tbody id="stats">
+        </tbody>
+    </table>
+
+    <p class="hint" id="sessions">
+    </p>
+
+    <p class="hint">
+        Use one session name per child or source video. Training keeps each
+        session entirely in either the training or the validation split.
+        Record all three labels, especially <i>other grasp</i>, so the model learns
+        what is <i>not</i> a pincer. Then run
+        <code>python mvp/train_pincer.py</code> and restart the server.
+    </p>
+
+</div>
+
+
+<script type="module">
+
+import {
+    SEQUENCE_LENGTH,
+    MEDIAPIPE_URL,
+    createHandLandmarker,
+    toPixelLandmarks,
+    HandTracker,
+    detectionsFromResult,
+    startCamera
+} from "./hand-tracking.js";
+
+
+const {
+    HandLandmarker,
+    FilesetResolver,
+    DrawingUtils
+} = await import(MEDIAPIPE_URL);
+
+
+// --------------------------------------------------
+// Elements
+// --------------------------------------------------
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const cameraWrap = document.getElementById("cameraWrap");
+
+const sourceSelect = document.getElementById("source");
+const fileInput = document.getElementById("file");
+const rateSelect = document.getElementById("rate");
+const startButton = document.getElementById("start");
+const sessionInput = document.getElementById("session");
+const labelSelect = document.getElementById("label");
+const handFilterSelect = document.getElementById("handFilter");
+const recordButton = document.getElementById("record");
+const statusText = document.getElementById("status");
+
+
+// --------------------------------------------------
+// State
+// --------------------------------------------------
+
+const HAND_COLORS = ["#00ff66", "#3da5ff"];
+
+let handLandmarker = null;
+let drawingUtils = null;
+let running = false;
+let lastVideoTime = -1;
+
+let recording = false;
+let savedThisRecording = 0;
+let discardedThisRecording = 0;
+
+const tracker = new HandTracker(2);
+
+// Continuous landmark run per hand slot.
+const segments = tracker.slots.map(() => null);
+
+
+sessionInput.value =
+    "camera-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "");
+
+
+// --------------------------------------------------
+// Saving
+// --------------------------------------------------
+
+async function refreshStats() {
+
+    const stats = await (await fetch("/pincer_data_stats")).json();
+
+    document.getElementById("stats").innerHTML =
+        Object.entries(stats.labels)
+            .map(([label, s]) =>
+                `<tr><td>${label}</td><td>${s.clips}</td><td>${s.frames}</td></tr>`)
+            .join("");
+
+    document.getElementById("sessions").textContent =
+        `Sessions: ${stats.sessions}. `
+        + `Live pincer predictions currently use the ${stats.pincer_source}.`;
+}
+
+
+function flushSegment(slotId) {
+
+    const segment = segments[slotId];
+
+    segments[slotId] = null;
+
+    if (!segment) {
+        return;
+    }
+
+    if (segment.landmarks.length < SEQUENCE_LENGTH) {
+        discardedThisRecording += 1;
+        updateRecordingStatus();
+        return;
+    }
+
+    fetch("/record_pincer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(segment)
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Save failed " + response.status);
+            }
+            savedThisRecording += 1;
+            updateRecordingStatus();
+            refreshStats();
+        })
+        .catch(error => {
+            console.error(error);
+            statusText.textContent = "Save error, see console";
+        });
+}
+
+
+function updateRecordingStatus() {
+
+    statusText.textContent =
+        (recording ? `Recording "${labelSelect.value}". ` : "Stopped. ")
+        + `Saved ${savedThisRecording} clip(s)`
+        + (discardedThisRecording
+            ? `, skipped ${discardedThisRecording} too short (< ${SEQUENCE_LENGTH} frames)`
+            : "");
+}
+
+
+function setRecording(on) {
+
+    if (on === recording) {
+        return;
+    }
+
+    if (on && !sessionInput.value.trim()) {
+        statusText.textContent = "Enter a session / child name first";
+        return;
+    }
+
+    recording = on;
+
+    if (!on) {
+        segments.forEach((_, slotId) => flushSegment(slotId));
+    } else {
+        savedThisRecording = 0;
+        discardedThisRecording = 0;
+    }
+
+    // Label and session must stay fixed during a recording.
+    labelSelect.disabled = on;
+    sessionInput.disabled = on;
+    handFilterSelect.disabled = on;
+
+    recordButton.classList.toggle("recording", on);
+    recordButton.textContent = on ? "■ Stop" : "● Record";
+
+    updateRecordingStatus();
+}
+
+
+recordButton.onclick = () => setRecording(!recording);
+
+document.addEventListener("keydown", event => {
+
+    if (event.code === "Space" && !recordButton.disabled && event.target.tagName !== "INPUT") {
+        event.preventDefault();
+        setRecording(!recording);
+    }
+});
+
+
+// --------------------------------------------------
+// Source selection
+// --------------------------------------------------
+
+sourceSelect.onchange = () => {
+
+    const fileMode = sourceSelect.value === "file";
+
+    fileInput.hidden = !fileMode;
+    rateSelect.hidden = !fileMode;
+    startButton.hidden = fileMode;
+};
+
+
+fileInput.onchange = () => {
+
+    const file = fileInput.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    setRecording(false);
+
+    if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+    }
+
+    video.src = URL.createObjectURL(file);
+    video.controls = true;
+    video.autoplay = false;
+    video.playbackRate = Number(rateSelect.value);
+    cameraWrap.classList.add("fileMode");
+
+    sessionInput.value = file.name.replace(/\.[^.]+$/, "");
+
+    begin("Play the video and press Record during each grasp.");
+};
+
+
+rateSelect.onchange = () => {
+    video.playbackRate = Number(rateSelect.value);
+};
+
+video.onratechange = () => {
+    rateSelect.value = String(video.playbackRate);
+};
+
+// Seeking jumps in time, so end any open clips.
+video.onseeking = () => {
+    segments.forEach((_, slotId) => flushSegment(slotId));
+};
+
+
+startButton.onclick = async () => {
+
+    setRecording(false);
+
+    video.removeAttribute("src");
+    video.controls = false;
+    cameraWrap.classList.remove("fileMode");
+
+    await startCamera(video, sourceSelect.value);
+
+    begin("Camera running. Press Record during each grasp.");
+};
+
+
+function begin(message) {
+
+    recordButton.disabled = false;
+    statusText.textContent = message;
+
+    if (!running) {
+        running = true;
+        requestAnimationFrame(detectLoop);
+    }
+}
+
+
+// --------------------------------------------------
+// Detection loop
+// --------------------------------------------------
+
+function passesFilter(landmarks) {
+
+    const filter = handFilterSelect.value;
+    const wristX = landmarks[0].x;
+
+    return (
+        filter === "all"
+        || (filter === "left" && wristX < 0.5)
+        || (filter === "right" && wristX >= 0.5)
+    );
+}
+
+
+function detectLoop() {
+
+    if (
+        video.readyState >= 2
+        &&
+        video.currentTime !== lastVideoTime
+    ) {
+
+        lastVideoTime = video.currentTime;
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        const result =
+            handLandmarker.detectForVideo(video, performance.now());
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const { matches, lost } =
+            tracker.update(detectionsFromResult(result));
+
+        // A hand that disappears ends its clip, so one
+        // clip never joins two separate appearances.
+        for (const slot of lost) {
+            flushSegment(slot.id);
+        }
+
+        for (const { slot, detection } of matches) {
+
+            const selected = passesFilter(detection.landmarks);
+
+            drawingUtils.drawConnectors(
+                detection.landmarks,
+                HandLandmarker.HAND_CONNECTIONS,
+                {
+                    color: selected ? HAND_COLORS[slot.id] : "#777",
+                    lineWidth: recording && selected ? 6 : 3
+                }
+            );
+
+            if (!recording) {
+                continue;
+            }
+
+            if (!selected) {
+                flushSegment(slot.id);
+                continue;
+            }
+
+            if (!segments[slot.id]) {
+
+                segments[slot.id] = {
+                    label: labelSelect.value,
+                    session_id: sessionInput.value.trim(),
+                    source: sourceSelect.value === "file" ? "video" : "camera",
+                    source_name:
+                        sourceSelect.value === "file" && fileInput.files[0]
+                            ? fileInput.files[0].name
+                            : sourceSelect.value,
+                    handedness: detection.handedness,
+                    landmarks: []
+                };
+            }
+
+            segments[slot.id].landmarks.push(
+                toPixelLandmarks(
+                    detection.landmarks,
+                    video.videoWidth,
+                    video.videoHeight
+                )
+            );
+        }
+    }
+
+    requestAnimationFrame(detectLoop);
+}
+
+
+// --------------------------------------------------
+// Start setup
+// --------------------------------------------------
+
+handLandmarker =
+    await createHandLandmarker(HandLandmarker, FilesetResolver);
+
+drawingUtils = new DrawingUtils(ctx);
+
+statusText.textContent = "Choose a camera or video file";
+
+await refreshStats();
+
+</script>
+
+
+</body>
+
+</html>

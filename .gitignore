@@ -1,6 +1,6 @@
 __pycache__
 .ipynb_checkpoints/
-.DS_Store/
+.DS_Store
 experiments/*
 jobs/*
 trash/*
@@ -30,3 +30,10 @@ slurm*
 logs
 6mA6UA/
 .ruff_cache
+# Recorded pincer-training clips (child hand landmarks)
+mvp/pincer_data/
+# Extracted ChildPlay hand crops for pincer labelling
+mvp/pincer_candidates/
+
+# Pincer model checkpoints (train with mvp/train_pincer.py)
+mvp/models_pincer/

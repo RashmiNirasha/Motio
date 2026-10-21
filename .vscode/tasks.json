@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Motio: Run",
+      "detail": "Set up, train if needed, start the server and open the live page",
+      "type": "shell",
+      "command": "python",
+      "windows": { "command": "py" },
+      "args": ["run.py"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "isBackground": false,
+      "problemMatcher": []
+    },
+    {
+      "label": "Motio: Retrain and run",
+      "type": "shell",
+      "command": "python",
+      "windows": { "command": "py" },
+      "args": ["run.py", "--retrain"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -5,7 +5,10 @@ experiments/*
 jobs/*
 trash/*
 .hydra/
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+.venv/
 wandb/
 lightning_logs/
 *.csv

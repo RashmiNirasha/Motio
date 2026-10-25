@@ -11,6 +11,41 @@ observation summary, language model and caregiver interface work together.
 > monitor development, and its observations are uncertain estimates. It is designed for
 > caregiver support and play enrichment.
 
+## Quick start
+
+First-time setup (environments, packages, model training) is in [SETUP.md](SETUP.md).
+
+**1. Start the server** from the repository folder, with one of the two AI options:
+
+```bash
+cd Motio
+conda activate childplay_coreml
+
+# Option A: Claude API (best answers; needs a key)
+export ANTHROPIC_API_KEY="your-key"
+python -m uvicorn mvp.webapp.server:app --host 0.0.0.0 --port 8000
+
+# Option B: free local model (Ollama app running, `ollama pull qwen2.5:7b` done once)
+MOTIO_LLM_BACKEND=ollama python -m uvicorn mvp.webapp.server:app --host 0.0.0.0 --port 8000
+```
+
+Wait for `Uvicorn running on http://0.0.0.0:8000` (the log shows `Object detector ready`
+about 10 seconds later). If port 8000 is busy, stop the old server with `Ctrl+C`, or run
+`kill $(lsof -ti :8000)`.
+
+**2. Open the system** in Chrome:
+
+| Page | URL |
+|---|---|
+| **Motio caregiver page** (camera + chat) | http://127.0.0.1:8000/app/caregiver.html |
+| **Researcher view** (live detail; open in the same browser) | http://127.0.0.1:8000/app/researcher.html |
+| Start page with all tools | http://127.0.0.1:8000/app/ |
+| Server health check | http://127.0.0.1:8000/health |
+
+**Phone camera (optional):** run `cloudflared tunnel --url http://localhost:8000` in a second
+terminal, then open the printed `https://...trycloudflare.com/app/caregiver.html` address on
+the phone.
+
 ---
 
 ## Contents

@@ -2,6 +2,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 
 import cv2
@@ -154,6 +155,45 @@ def load_is_child():
 
 is_child = load_is_child()
 
+
+def labelled_ranges():
+
+    # Frame ranges you have already labelled, per hand track.
+    # Changing --min-hand-px etc. moves chunk boundaries, so match
+    # by overlap, not by candidate id.
+    path = os.path.join(OUTPUT_DIR, "labels.json")
+
+    if not os.path.exists(path):
+        return {}
+
+    with open(path) as f:
+        labels = json.load(f)
+
+    ranges = {}
+
+    for candidate_id, entry in labels.items():
+
+        if "start_frame" in entry:
+            track = (entry["clip"], entry["pid"], entry["hand"])
+            start, end = entry["start_frame"], entry["end_frame"]
+        else:
+            # Older labels only have the id: <clip>_p<pid>_<hand>_<start>.
+            # Chunks are at most ~70 frames long.
+            clip, pid, hand, start = re.match(
+                r"(.+)_p(\d+)_(left|right)_(\d+)$", candidate_id
+            ).groups()
+            track = (clip, int(pid), hand)
+            start = int(start)
+            end = start + args.max_frames + args.min_frames - 2
+
+        ranges.setdefault(track, []).append((start, end, candidate_id))
+
+    return ranges
+
+
+already_labelled = labelled_ranges()
+skipped_labelled = 0
+
 skipped_people = {"adult": set(), "unknown": set()}
 
 candidates = []
@@ -207,8 +247,19 @@ for split in ["train", "val", "test"]:
                         .interaction.str.lower().value_counts().to_dict()
                     )
 
+                    candidate_id = f"{clip}_p{pid}_{hand}_{part[0]}"
+
+                    if any(
+                        start <= part[-1] and end >= part[0]
+                        and labelled_id != candidate_id
+                        for start, end, labelled_id
+                        in already_labelled.get((clip, pid, hand), [])
+                    ):
+                        skipped_labelled += 1
+                        continue
+
                     candidates.append({
-                        "candidate_id": f"{clip}_p{pid}_{hand}_{part[0]}",
+                        "candidate_id": candidate_id,
                         "split": split,
                         "clip": clip,
                         "video_id": clip[:11],
@@ -226,6 +277,8 @@ print(
     f"\nSkipped {len(skipped_people['adult'])} adults and "
     f"{len(skipped_people['unknown'])} people without a child/adult annotation"
 )
+
+print(f"Skipped {skipped_labelled} chunks overlapping clips you already labelled")
 
 print(f"Found {len(candidates)} candidate chunks "
       f"from {len({(c['clip'], c['pid'], c['hand']) for c in candidates})} hand tracks "

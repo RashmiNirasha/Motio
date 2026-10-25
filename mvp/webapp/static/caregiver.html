@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+>
+
+<title>Motio</title>
+
+
+<style>
+
+:root {
+    /* Always light, whatever the device's dark-mode setting. */
+    --bg: #ffffff;
+    --card: #ffffff;
+    --card-2: #f4f2ee;
+    --ink: #2a2723;
+    --muted: #6d675f;
+    --line: #e4ded3;
+    --accent: #2e7d5b;
+    --accent-ink: #ffffff;
+    --accent-soft: #e3f1ea;
+    --amber: #f2a541;
+    --amber-soft: #fdf0dc;
+    --you: #2f6fd1;
+    --you-soft: #e6eefb;
+    --danger: #b3261e;
+    --shadow: 0 1px 2px rgba(40, 30, 10, 0.06), 0 6px 20px rgba(40, 30, 10, 0.06);
+    color-scheme: light;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+/* Elements hidden from script must stay hidden even when CSS sets display. */
+[hidden] {
+    display: none !important;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+button,
+select,
+input {
+    font: inherit;
+    color: inherit;
+}
+
+header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+}
+
+.logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 18px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 19px;
+}
+
+header .tagline {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
+    gap: 18px;
+    padding: 0 20px 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+@media (max-width: 900px) {
+
+    main {
+        grid-template-columns: 1fr;
+        padding: 0 16px 20px;
+    }
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+}
+
+/* ---------- camera ---------- */
+
+.stage {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: #0d0c0b;
+    border-radius: 18px 18px 0 0;
+    overflow: hidden;
+}
+
+.stage video,
+.stage canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.stage canvas {
+    pointer-events: none;
+}
+
+.stage.has-controls canvas {
+    height: calc(100% - 48px);
+}
+
+.placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #eee;
+    text-align: center;
+    padding: 20px;
+}
+
+.placeholder p {
+    margin: 0;
+    max-width: 380px;
+    color: #c9c4bb;
+}
+
+.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    border-radius: 999px;
+    padding: 12px 22px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.primary:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.linkish {
+    background: none;
+    border: none;
+    color: #c9d8ff;
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.camera-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+}
+
+.camera-bar select {
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 6px 8px;
+    max-width: 220px;
+}
+
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.camera-bar .spacer {
+    flex: 1;
+}
+
+.ghost {
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 6px 12px;
+    cursor: pointer;
+}
+
+.status {
+    padding: 0 14px 10px;
+    color: var(--muted);
+    font-size: 13px;
+    min-height: 1em;
+}
+
+.status.error {
+    color: var(--danger);
+}
+
+/* ---------- what I'm noticing ---------- */
+
+.noticing {
+    margin-top: 14px;
+    padding: 14px 16px;
+}
+
+.noticing h2,
+.chat-head h2 {
+    margin: 0 0 8px;
+    font-size: 15px;
+}
+
+.hand-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: none;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.chip {
+    background: var(--amber-soft);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 13px;
+}
+
+.chip.unsure {
+    opacity: 0.6;
+}
+
+.fine {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin: 8px 0 0;
+}
+
+/* ---------- chat ---------- */
+
+.chat {
+    display: flex;
+    flex-direction: column;
+    min-height: 560px;
+    max-height: calc(100vh - 100px);
+    position: sticky;
+    top: 16px;
+}
+
+@media (max-width: 900px) {
+
+    .chat {
+        position: static;
+        max-height: none;
+        min-height: 480px;
+    }
+}
+
+.chat-head {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--line);
+}
+
+.age {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.age select {
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 5px 8px;
+}
+
+.age select.needed {
+    outline: 3px solid var(--amber);
+}
+
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.bubble {
+    max-width: 92%;
+    padding: 10px 13px;
+    border-radius: 16px;
+}
+
+.bubble.bot {
+    background: var(--card-2);
+    border-top-left-radius: 6px;
+    align-self: flex-start;
+}
+
+.bubble.you {
+    background: var(--you-soft);
+    color: var(--ink);
+    border-top-right-radius: 6px;
+    align-self: flex-end;
+}
+
+.bubble p {
+    margin: 0 0 6px;
+}
+
+.bubble p:last-child {
+    margin-bottom: 0;
+}
+
+.bubble .seen {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.bubble.error {
+    background: none;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+}
+
+.activity {
+    margin-top: 10px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+}
+
+.activity h3 {
+    margin: 0 0 8px;
+    font-size: 16px;
+}
+
+.activity .need {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.activity .need span {
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 13px;
+}
+
+.activity ol {
+    margin: 6px 0 8px;
+    padding-left: 20px;
+}
+
+.activity li {
+    margin: 3px 0;
+}
+
+.activity .why {
+    font-size: 14px;
+}
+
+.activity .safety {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 4px 0 0;
+}
+
+.activity .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.pill {
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.pill:hover {
+    border-color: var(--accent);
+}
+
+.typing {
+    color: var(--muted);
+    font-size: 14px;
+    align-self: flex-start;
+}
+
+.composer {
+    border-top: 1px solid var(--line);
+    padding: 10px 12px 12px;
+}
+
+.composer .chips {
+    margin: 0 0 8px;
+}
+
+.composer form {
+    display: flex;
+    gap: 8px;
+}
+
+.composer input {
+    flex: 1;
+    min-width: 0;
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 10px 14px;
+}
+
+.composer input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.disclaimer {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 8px 4px 0;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<header>
+    <div class="logo" aria-hidden="true">M</div>
+    <div>
+        <h1>Motio</h1>
+        <div class="tagline">Motor Development Assistant</div>
+    </div>
+</header>
+
+
+<main>
+
+<section>
+
+    <div class="card">
+
+        <div class="stage" id="stage">
+
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="canvas"></canvas>
+
+            <div class="placeholder" id="placeholder">
+                <p>Point the camera at your child's play area so their hands and toys are visible.</p>
+                <button class="primary" id="startCamera" disabled>Start camera</button>
+                <button class="linkish" id="useVideo">or use a video file</button>
+                <input id="file" type="file" accept="video/*" hidden>
+            </div>
+
+        </div>
+
+        <div class="camera-bar">
+
+            <select id="cameraSelect" aria-label="Camera">
+                <option value="user">Front camera</option>
+                <option value="environment">Back camera</option>
+            </select>
+
+            <label class="toggle">
+                <input type="checkbox" id="showOverlay" checked>
+                Show what the camera sees
+            </label>
+
+            <label class="toggle">
+                <input type="checkbox" id="spotToys">
+                Spot toys
+            </label>
+
+            <span class="spacer"></span>
+
+            <button class="ghost" id="stop" hidden>Stop</button>
+
+        </div>
+
+        <div class="status" id="status">Getting ready...</div>
+
+    </div>
+
+    <div class="card noticing" aria-live="polite">
+
+        <h2>What I'm noticing</h2>
+
+        <div id="handsNow">
+            <div class="hand-line" style="color: var(--muted)">Start the camera to begin.</div>
+        </div>
+
+        <div class="chips" id="toysNow"></div>
+
+        <p class="fine">
+            These are the camera's best guesses and can be wrong.
+            Video stays on this device; only short text summaries are used for suggestions.
+        </p>
+
+    </div>
+
+</section>
+
+
+<section class="card chat" aria-label="Chat with Motio">
+
+    <div class="chat-head">
+
+        <h2>Ask Motio</h2>
+
+        <div class="age">
+            Child's age
+            <select id="ageYears" aria-label="Years"></select>
+            <select id="ageMonths" aria-label="Months"></select>
+        </div>
+
+    </div>
+
+    <div class="messages" id="messages" aria-live="polite"></div>
+
+    <div class="composer">
+
+        <div class="chips">
+            <button class="pill" data-q="What can we play next?">What can we play next?</button>
+            <button class="pill" data-q="Can you suggest something using the toys you can see?">Use these toys</button>
+            <button class="pill" data-q="What hand skills does this practise?">What skills?</button>
+            <button class="pill" id="newChat">New chat</button>
+        </div>
+
+        <form id="askForm">
+            <input id="question" maxlength="500" autocomplete="off"
+                   placeholder="Ask anything, e.g. Can you suggest something with blocks?">
+            <button class="primary" id="send">Send</button>
+        </form>
+
+        <p class="disclaimer">
+            Ideas for play, not an assessment of your child. Always stay with your child during play.
+        </p>
+
+    </div>
+
+</section>
+
+</main>
+
+
+<script type="module">
+
+import { Observer, HAND_COLORS } from "./observe-core.js?v=1";
+import { addCameraOptions } from "./hand-tracking.js?v=4";
+
+
+const $ = id => document.getElementById(id);
+
+const video = $("video");
+const stage = $("stage");
+const placeholder = $("placeholder");
+const statusLine = $("status");
+const messages = $("messages");
+const questionInput = $("question");
+const sendButton = $("send");
+
+const observer = new Observer({ video, canvas: $("canvas"), overlay: "friendly" });
+
+
+// --------------------------------------------------
+// Small helpers
+// --------------------------------------------------
+
+function el(tag, className, text) {
+
+    // Model output is always inserted as text, never as HTML.
+    const node = document.createElement(tag);
+
+    if (className) {
+        node.className = className;
+    }
+
+    if (text !== undefined) {
+        node.textContent = text;
+    }
+
+    return node;
+}
+
+function setStatus(text, kind = "info") {
+
+    statusLine.textContent = text;
+    statusLine.className = "status" + (kind === "error" ? " error" : "");
+}
+
+function scrollChat() {
+
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function store(key, value) {
+
+    try {
+        localStorage.setItem(key, value);
+    } catch (error) {
+        // Storage can be unavailable (private mode); the page works without it.
+    }
+}
+
+function recall(key) {
+
+    try {
+        return localStorage.getItem(key);
+    } catch (error) {
+        return null;
+    }
+}
+
+
+// --------------------------------------------------
+// Camera
+// --------------------------------------------------
+
+$("spotToys").checked = observer.detectObjects;
+
+$("spotToys").onchange = event => observer.setDetectObjects(event.target.checked);
+
+$("showOverlay").onchange = event => {
+    observer.overlay = event.target.checked ? "friendly" : "off";
+};
+
+$("startCamera").onclick = async () => {
+
+    $("startCamera").disabled = true;
+
+    try {
+
+        const camera = await observer.startCamera($("cameraSelect").value);
+
+        await addCameraOptions($("cameraSelect"), camera.deviceId);
+
+    } catch (error) {
+
+        $("startCamera").disabled = false;
+    }
+};
+
+$("cameraSelect").onchange = async () => {
+
+    if (placeholder.hidden) {
+
+        try {
+            await observer.startCamera($("cameraSelect").value);
+        } catch (error) {
+            // shown in the status line
+        }
+    }
+};
+
+$("useVideo").onclick = () => $("file").click();
+
+$("file").onchange = () => {
+
+    const file = $("file").files[0];
+
+    if (file) {
+        observer.useVideoFile(file);
+    }
+};
+
+$("stop").onclick = () => observer.stop();
+
+observer.on("source", source => {
+
+    const live = source.kind !== "stopped";
+
+    placeholder.hidden = live;
+    $("stop").hidden = !live;
+    $("startCamera").disabled = false;
+    stage.classList.toggle("has-controls", source.kind === "video");
+
+    if (source.kind === "video") {
+        setStatus("Press play on the video to start.");
+    } else if (live) {
+        setStatus(source.note);
+    } else {
+        setStatus("Camera stopped.");
+        renderNoticing(null);
+    }
+});
+
+observer.on("status", status => setStatus(status.text, status.kind));
+
+
+// --------------------------------------------------
+// What I'm noticing (plain language)
+// --------------------------------------------------
+
+const PHASE_WORDS = {
+    idle: "resting",
+    moving: "moving",
+    engaging: "reaching for or picking something up",
+    holding: "holding something",
+    manipulating: "playing with something",
+    releasing: "letting go"
+};
+
+let lastObjects = [];
+
+function handLabel(hand) {
+
+    // MediaPipe's left/right is from the camera's point of view
+    // and often unreliable, so just number the hands.
+    return `Hand ${hand.slot + 1}`;
+}
+
+function renderNoticing(result) {
+
+    const box = $("handsNow");
+
+    box.innerHTML = "";
+
+    const hands = result ? result.hands.filter(h => h.visible) : [];
+    const warming = result ? result.warming || [] : [];
+
+    for (const hand of hands) {
+
+        const line = el("div", "hand-line");
+        const dot = el("span", "dot");
+
+        dot.style.background = HAND_COLORS[hand.slot];
+
+        const doing = hand.object_in_hand
+            ? `probably holding the ${hand.object_in_hand}`
+            : PHASE_WORDS[hand.phase] || hand.phase;
+
+        line.append(dot, el("span", "", `${handLabel(hand)}: ${doing}`));
+        box.append(line);
+    }
+
+    for (const w of warming) {
+
+        if (!hands.some(h => h.slot === w.slot)) {
+
+            const line = el("div", "hand-line");
+            const dot = el("span", "dot");
+
+            dot.style.background = HAND_COLORS[w.slot];
+            line.append(dot, el("span", "", `Hand ${w.slot + 1}: getting a good look...`));
+            box.append(line);
+        }
+    }
+
+    if (!hands.length && !warming.length) {
+
+        box.append(el(
+            "div",
+            "hand-line",
+            result ? "No hands in view right now." : "Start the camera to begin."
+        ));
+    }
+
+    renderToys();
+}
+
+function renderToys() {
+
+    const box = $("toysNow");
+
+    box.innerHTML = "";
+
+    const best = new Map();
+
+    for (const o of lastObjects) {
+        best.set(o.label, Math.max(best.get(o.label) || 0, o.confidence));
+    }
+
+    for (const [label, confidence] of [...best].sort((a, b) => b[1] - a[1])) {
+        box.append(el("span", "chip" + (confidence < 0.4 ? " unsure" : ""), label));
+    }
+}
+
+observer.on("hands", renderNoticing);
+
+observer.on("objects", summary => {
+
+    lastObjects = summary.enabled ? summary.objects : [];
+    renderToys();
+});
+
+
+// --------------------------------------------------
+// Child's age
+// --------------------------------------------------
+
+const ageYears = $("ageYears");
+const ageMonths = $("ageMonths");
+
+ageYears.add(new Option("Not set", ""));
+
+for (let y = 0; y <= 5; y++) {
+    ageYears.add(new Option(`${y} year${y === 1 ? "" : "s"}`, String(y)));
+}
+
+for (let m = 0; m <= 11; m++) {
+    ageMonths.add(new Option(`${m} month${m === 1 ? "" : "s"}`, String(m)));
+}
+
+function ageInMonths() {
+
+    return ageYears.value === "" ? null : Number(ageYears.value) * 12 + Number(ageMonths.value);
+}
+
+async function saveAge() {
+
+    ageYears.classList.remove("needed");
+    store("motio-age-years", ageYears.value);
+    store("motio-age-months", ageMonths.value);
+
+    try {
+        await observer.setAge(ageInMonths());
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+ageYears.onchange = ageMonths.onchange = saveAge;
+
+ageYears.value = recall("motio-age-years") ?? "";
+ageMonths.value = recall("motio-age-months") ?? "0";
+
+
+// --------------------------------------------------
+// Chat
+// --------------------------------------------------
+
+function botBubble() {
+
+    const bubble = el("div", "bubble bot");
+    messages.append(bubble);
+    return bubble;
+}
+
+function welcome() {
+
+    const bubble = botBubble();
+
+    bubble.append(el("p", "", "Hi! I suggest simple play ideas that help little hands practise."));
+    bubble.append(el(
+        "p",
+        "seen",
+        "Start the camera, set your child's age, let them play for a minute, "
+        + "then ask me what to try next."
+    ));
+}
+
+function renderAnswer(reply) {
+
+    const bubble = botBubble();
+
+    bubble.append(el("p", "", reply.reply));
+    bubble.append(el("p", "seen", reply.observation_summary + " " + reply.confidence_note));
+
+    const a = reply.activity;
+    const card = el("div", "activity");
+
+    card.append(el("h3", "", a.title));
+
+    if (a.objects_needed.length) {
+
+        const need = el("div", "need");
+
+        need.append(el("strong", "", "You need:"));
+
+        for (const item of a.objects_needed) {
+            need.append(el("span", "", item));
+        }
+
+        card.append(need);
+    }
+
+    const steps = el("ol");
+
+    for (const step of a.instructions) {
+        steps.append(el("li", "", step));
+    }
+
+    card.append(steps);
+    card.append(el("p", "why", "Why it helps: " + a.why_it_helps));
+
+    for (const note of a.safety_notes) {
+        card.append(el("p", "safety", "Safety: " + note));
+    }
+
+    const actions = el("div", "actions");
+
+    const easier = el("button", "pill", "Make it easier");
+    easier.onclick = () => ask("Can you make that easier?");
+
+    const harder = el("button", "pill", "Make it harder");
+    harder.onclick = () => ask("Can you make that a bit harder?");
+
+    const other = el("button", "pill", "Something different");
+    other.onclick = () => ask("Can you suggest something different?");
+
+    actions.append(easier, harder, other);
+    card.append(actions);
+
+    bubble.append(card);
+
+    if (reply.needs_more_observation) {
+        bubble.append(el("p", "seen", "Tip: let the camera watch the play a little longer for better ideas."));
+    }
+
+    scrollChat();
+}
+
+let busy = false;
+
+async function ask(question) {
+
+    question = question.trim();
+
+    if (!question || busy) {
+        return;
+    }
+
+    busy = true;
+    sendButton.disabled = true;
+
+    if (ageInMonths() === null) {
+        ageYears.classList.add("needed");
+    }
+
+    messages.append(el("div", "bubble you", question));
+
+    const typing = el("div", "typing", "Motio is thinking...");
+    messages.append(typing);
+    scrollChat();
+
+    const started = performance.now();
+
+    const timer = setInterval(() => {
+
+        const seconds = Math.round((performance.now() - started) / 1000);
+
+        if (seconds >= 5) {
+            typing.textContent = `Motio is thinking... ${seconds} s`;
+        }
+    }, 1000);
+
+    try {
+
+        const reply = await observer.ask(question);
+
+        typing.remove();
+        renderAnswer(reply);
+
+    } catch (error) {
+
+        typing.replaceWith(el("div", "bubble error", "Sorry, I couldn't get an idea just now: " + error.message));
+
+    } finally {
+
+        clearInterval(timer);
+        busy = false;
+        sendButton.disabled = false;
+        scrollChat();
+    }
+}
+
+$("askForm").onsubmit = event => {
+
+    event.preventDefault();
+
+    ask(questionInput.value);
+    questionInput.value = "";
+};
+
+for (const button of document.querySelectorAll(".pill[data-q]")) {
+    button.onclick = () => ask(button.dataset.q);
+}
+
+$("newChat").onclick = async () => {
+
+    await observer.newConversation().catch(console.error);
+
+    messages.innerHTML = "";
+    welcome();
+};
+
+
+// --------------------------------------------------
+// Start
+// --------------------------------------------------
+
+welcome();
+
+try {
+
+    await observer.init();
+
+    $("startCamera").disabled = false;
+    setStatus("Ready when you are.");
+
+    if (ageYears.value !== "") {
+        await saveAge();
+    }
+
+} catch (error) {
+
+    console.error(error);
+    setStatus("Could not start: " + error.message, "error");
+}
+
+</script>
+
+
+</body>
+
+</html>

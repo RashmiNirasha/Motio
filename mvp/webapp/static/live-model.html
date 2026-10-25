@@ -182,6 +182,8 @@ Start Monitoring
 Loading AI...
 </div>
 
+<div id="cameraNote" style="opacity:0.65;font-size:13px"></div>
+
 
 <div id="cameraWrap">
 
@@ -240,8 +242,10 @@ import {
     toPixelLandmarks,
     HandTracker,
     detectionsFromResult,
-    startCamera
-} from "./hand-tracking.js";
+    startCamera,
+    addCameraOptions,
+    cameraErrorMessage
+} from "./hand-tracking.js?v=4";
 
 
 const {
@@ -495,16 +499,26 @@ async function runPrediction(hand) {
 
 startButton.onclick = async () => {
 
-    await startCamera(video, facingSelect.value);
+    try {
 
-    running = true;
+        const camera = await startCamera(video, facingSelect.value);
 
-    startButton.style.display = "none";
-    facingSelect.style.display = "none";
+        document.getElementById("cameraNote").textContent = camera.note;
 
-    globalStatus.textContent = "Looking for hands...";
+        running = true;
 
-    requestAnimationFrame(detectLoop);
+        startButton.style.display = "none";
+        facingSelect.style.display = "none";
+
+        globalStatus.textContent = "Looking for hands...";
+
+        requestAnimationFrame(detectLoop);
+
+    } catch (error) {
+
+        console.error(error);
+        globalStatus.textContent = cameraErrorMessage(error);
+    }
 };
 
 
@@ -570,7 +584,9 @@ function detectLoop() {
             const features = makeFeatures(
                 detection.landmarks,
                 detection.handedness,
-                confidenceFill
+                confidenceFill,
+                video.videoWidth,
+                video.videoHeight
             );
 
             if (features.length === 69) {

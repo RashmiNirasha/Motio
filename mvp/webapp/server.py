@@ -1,13 +1,15 @@
 import json
 import os
 import sys
+import threading
 import time
 import uuid
 
 import numpy as np
 import torch
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -34,6 +36,8 @@ sys.path.insert(
 
 from model_binary import BinaryTemporalHandNet
 from model_pincer import PincerTemporalNet
+from observe.hand_state import HandReading, ObserveConfig
+from observe.session import SessionStore
 from pincer_features import (
     LABELS as PINCER_LABELS,
     SEQUENCE_LENGTH as PINCER_SEQUENCE_LENGTH,
@@ -56,6 +60,13 @@ THRESHOLD_PATH = os.path.join(
     "iphone_threshold.txt"
 )
 
+LIVE_MODEL_PATH = os.path.join(
+    PROJECT_ROOT,
+    "mvp",
+    "models_live",
+    "child_interaction_live.pt"
+)
+
 PINCER_MODEL_PATH = os.path.join(
     PROJECT_ROOT,
     "mvp",
@@ -68,6 +79,12 @@ PINCER_DATA_DIR = os.path.join(
     "mvp",
     "pincer_data",
     "raw"
+)
+
+OBSERVE_LOG_DIR = os.path.join(
+    PROJECT_ROOT,
+    "mvp",
+    "observe_logs"
 )
 
 CANDIDATE_DIR = os.path.join(
@@ -146,7 +163,50 @@ joint_confidence_fill = (
 )
 
 
-print("Model loaded.")
+# --------------------------------------------------
+# Live-compatible interaction model (shape only)
+#
+# The original model relies on ChildPlay's per-joint confidence
+# and the hand's position/size in the frame, which MediaPipe
+# doesn't provide, so live it outputs ~0.5 regardless of the hand.
+# train_live_interaction.py trains the same architecture on hand
+# shape only. It is used whenever it exists, unless
+# MOTIO_INTERACTION_MODEL=original.
+# --------------------------------------------------
+
+interaction_model_name = "child_object_interaction"
+masked_columns = None
+masked_values = None
+
+if (
+    os.path.exists(LIVE_MODEL_PATH)
+    and os.environ.get("MOTIO_INTERACTION_MODEL", "live") != "original"
+):
+
+    live_checkpoint = torch.load(
+        LIVE_MODEL_PATH,
+        map_location="cpu",
+        weights_only=False
+    )
+
+    model = BinaryTemporalHandNet(
+        np.asarray(live_checkpoint["feature_mean"], dtype=np.float32),
+        np.asarray(live_checkpoint["feature_std"], dtype=np.float32)
+    )
+
+    model.load_state_dict(live_checkpoint["model_state_dict"])
+    model.eval()
+
+    masked_columns = np.asarray(live_checkpoint["masked_columns"])
+    masked_values = np.asarray(
+        live_checkpoint["constants"], dtype=np.float32
+    )[masked_columns]
+
+    threshold = float(live_checkpoint["threshold"])
+    interaction_model_name = "child_interaction_live (hand shape only)"
+
+
+print("Model loaded:", interaction_model_name)
 print("Threshold:", threshold)
 
 
@@ -271,7 +331,7 @@ def health():
 
     return {
         "status": "ok",
-        "model": "child_object_interaction",
+        "model": interaction_model_name,
         "sequence_length": 20,
         "feature_dimension": 69,
         "threshold": threshold
@@ -314,18 +374,7 @@ def predict(
             )
         )
 
-    tensor = torch.from_numpy(
-        array
-    ).unsqueeze(0)
-
-    with torch.no_grad():
-
-        logit = model(tensor)
-
-        probability = (
-            torch.sigmoid(logit)
-            .item()
-        )
+    probability = interaction_probability(array)
 
     interaction = (
         probability >= threshold
@@ -351,6 +400,12 @@ def predict(
 
 
 def interaction_probability(array):
+
+    if masked_columns is not None:
+
+        # Columns the live model never saw during training.
+        array = array.copy()
+        array[:, masked_columns] = masked_values
 
     tensor = torch.from_numpy(
         array
@@ -444,6 +499,297 @@ def predict_hand(
 
         "pincer_source":
             pincer_source()
+    }
+
+
+# --------------------------------------------------
+# Observation MVP (Stage 1: hands)
+#
+# The browser sends the current 20-frame buffers for each visible
+# hand a few times per second. The server scores each hand with the
+# ChildPlay interaction model and keeps the per-hand temporal state
+# (smoothing, confirmed interaction, inferred phase).
+# --------------------------------------------------
+
+observe_sessions = SessionStore(
+    config=ObserveConfig(threshold=threshold),
+    log_dir=OBSERVE_LOG_DIR
+)
+
+
+class ObserveHand(BaseModel):
+    slot: int
+    handedness: str = "Unknown"
+    # [20, 69] features and [20, 21, 3] pixel landmarks
+    sequence: list[list[float]]
+    landmarks: list[list[list[float]]]
+
+
+class ObserveUpdate(BaseModel):
+    session_id: str
+    # Client clock in seconds (only differences matter)
+    t: float
+    hands: list[ObserveHand] = []
+    # Video width, height in pixels (the landmarks' coordinate frame)
+    video_size: list[float] | None = None
+
+
+class ObserveSessionRequest(BaseModel):
+    session_id: str
+    # record endpoint only
+    on: bool = True
+
+
+@app.post("/observe/update")
+def observe_update(
+    request: ObserveUpdate
+):
+
+    readings = []
+
+    for hand in request.hands:
+
+        sequence = np.asarray(hand.sequence, dtype=np.float32)
+        landmarks = np.asarray(hand.landmarks, dtype=np.float32)
+
+        if sequence.shape != (20, 69) or landmarks.shape != (20, 21, 3):
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Expected sequence [20,69] and landmarks [20,21,3], "
+                    f"received {list(sequence.shape)} and {list(landmarks.shape)}"
+                )
+            )
+
+        wrist = landmarks[-1, 0]
+        palm = float(np.linalg.norm(landmarks[-1, 0] - landmarks[-1, 9]))
+
+        readings.append(
+            HandReading(
+                slot=hand.slot,
+                p=float(interaction_probability(sequence)),
+                wrist=(float(wrist[0]), float(wrist[1])),
+                palm=max(palm, 1e-6),
+                handedness=hand.handedness
+            )
+        )
+
+    session = observe_sessions.get(request.session_id)
+
+    result = session.update(
+        request.t,
+        readings,
+        hand_frames={
+            hand.slot: hand.landmarks[-1]
+            for hand in request.hands
+        },
+        video_size=request.video_size
+    )
+
+    result["threshold"] = threshold
+    result["recording"] = session.recording
+
+    return result
+
+
+# --------------------------------------------------
+# Observation MVP (Stage 2: play objects)
+#
+# The browser sends a small JPEG of the current frame about twice a
+# second. It is decoded in memory, run through the detector and
+# discarded; frames are never written to disk. The detector loads on
+# the first frame (a few seconds), so the server still starts fast.
+# --------------------------------------------------
+
+object_detector = None
+object_detector_error = None
+object_detector_lock = threading.Lock()
+
+
+def get_object_detector():
+
+    global object_detector, object_detector_error
+
+    with object_detector_lock:
+
+        if object_detector is None and object_detector_error is None:
+
+            try:
+                from observe.detector import ObjectDetector
+
+                detector = ObjectDetector()
+
+                # The first inference takes seconds (GPU start-up) and each new
+                # image shape ~0.7 s more, so warm up the common camera shapes
+                # (4:3, 16:9, portrait) here instead of on the first frames.
+                for height, width in [(480, 640), (360, 640), (640, 360)]:
+                    detector.detect(np.zeros((height, width, 3), dtype=np.uint8))
+
+                object_detector = detector
+                print("Object detector ready on", detector.device, flush=True)
+
+            except Exception as error:
+
+                object_detector_error = f"{type(error).__name__}: {error}"
+                print("Object detector unavailable:", object_detector_error, flush=True)
+
+    return object_detector
+
+
+# Load in the background at start-up, so it is ready before the first frame.
+# Set MOTIO_DETECTOR=off to skip (the server then works without objects).
+if os.environ.get("MOTIO_DETECTOR", "on") != "off":
+    threading.Thread(target=get_object_detector, daemon=True).start()
+
+
+@app.post("/observe/frame")
+async def observe_frame(
+    request: Request,
+    session_id: str,
+    t: float
+):
+
+    import cv2
+
+    data = await request.body()
+
+    image = cv2.imdecode(
+        np.frombuffer(data, dtype=np.uint8),
+        cv2.IMREAD_COLOR
+    )
+
+    if image is None:
+        raise HTTPException(status_code=400, detail="Body must be a JPEG or PNG image")
+
+    detector = await run_in_threadpool(get_object_detector)
+
+    if detector is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Object detector unavailable: " + str(object_detector_error)
+        )
+
+    detections = await run_in_threadpool(detector.detect, image)
+
+    objects = [d.to_dict() for d in detections]
+
+    observe_sessions.get(session_id).last_objects = {"t": t, "objects": objects}
+
+    return {
+        "t": t,
+        "objects": objects,
+        "ms": round(detector.last_ms),
+        "device": detector.device,
+        "image_size": [int(image.shape[1]), int(image.shape[0])]
+    }
+
+
+# --------------------------------------------------
+# Caregiver assistant (Claude API)
+# --------------------------------------------------
+
+class ProfileRequest(BaseModel):
+    session_id: str
+    child_age_months: int | None = None
+
+
+class AskRequest(BaseModel):
+    session_id: str
+    question: str
+
+
+caregiver_assistant = None
+
+
+@app.post("/observe/profile")
+def observe_profile(
+    request: ProfileRequest
+):
+
+    if request.child_age_months is not None and not 0 <= request.child_age_months <= 72:
+        raise HTTPException(status_code=400, detail="Age must be 0-72 months")
+
+    observe_sessions.get(request.session_id).child_age_months = request.child_age_months
+
+    return {"child_age_months": request.child_age_months}
+
+
+@app.get("/observe/observation")
+def observe_observation(
+    session_id: str
+):
+
+    # Exactly what the assistant would receive right now.
+    return observe_sessions.get(session_id).observation()
+
+
+@app.post("/assistant/ask")
+def assistant_ask(
+    request: AskRequest
+):
+
+    global caregiver_assistant
+
+    from observe.assistant import Assistant, AssistantUnavailable
+
+    question = request.question.strip()[:1000]
+
+    if not question:
+        raise HTTPException(status_code=400, detail="Empty question")
+
+    if caregiver_assistant is None:
+        caregiver_assistant = Assistant()
+
+    session = observe_sessions.get(request.session_id)
+    observation = session.observation()
+
+    try:
+        reply = caregiver_assistant.respond(observation, question, session.chat)
+    except AssistantUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+    reply["observation"] = observation
+
+    return reply
+
+
+@app.post("/assistant/reset")
+def assistant_reset(
+    request: ObserveSessionRequest
+):
+
+    observe_sessions.get(request.session_id).chat = []
+
+    return {"reset": True}
+
+
+@app.post("/observe/reset")
+def observe_reset(
+    request: ObserveSessionRequest
+):
+
+    observe_sessions.get(request.session_id).reset()
+
+    return {"reset": True}
+
+
+@app.post("/observe/record")
+def observe_record(
+    request: ObserveSessionRequest
+):
+
+    session = observe_sessions.get(request.session_id)
+
+    if request.on:
+        path = session.start_recording()
+    else:
+        path = session.log_path
+        session.stop_recording()
+
+    return {
+        "recording": session.recording,
+        "file": os.path.relpath(path, PROJECT_ROOT) if path else None
     }
 
 
@@ -636,6 +982,7 @@ def export_candidate(candidate, label, landmarks):
                     "source": "childplay",
                     "source_name": candidate["candidate_id"],
                     "handedness": candidate["hand"],
+                    "is_child": bool(candidate.get("is_child")),
                     "landmarks": run,
                     "clip_id": f"{prefix}{i}",
                     "created": time.time()
@@ -724,6 +1071,13 @@ def pincer_label(
 
     labels[request.candidate_id] = {
         "label": request.label,
+        # Where the clip is, so re-running the extractor with
+        # different settings never re-offers the same footage.
+        "clip": candidate["clip"],
+        "pid": candidate["pid"],
+        "hand": candidate["hand"],
+        "start_frame": candidate["start_frame"],
+        "end_frame": candidate["end_frame"],
         "hand_frames": sum(f is not None for f in request.landmarks),
         "exported_clips": exported,
         "labelled_at": time.time()
@@ -749,6 +1103,23 @@ os.makedirs(
     exist_ok=True
 )
 
+
+class NoCacheStaticFiles(StaticFiles):
+
+    # The pages and hand-tracking.js change together. Without this,
+    # a browser can pair a new page with a cached old script and the
+    # whole page silently stops working. "no-cache" still lets the
+    # browser reuse a file, but only after the server confirms it
+    # hasn't changed (ETag), so it is cheap.
+
+    async def get_response(self, path, scope):
+
+        response = await super().get_response(path, scope)
+
+        response.headers["Cache-Control"] = "no-cache"
+
+        return response
+
 app.mount(
     "/candidates",
     StaticFiles(
@@ -759,7 +1130,7 @@ app.mount(
 
 app.mount(
     "/app",
-    StaticFiles(
+    NoCacheStaticFiles(
         directory=STATIC_DIR,
         html=True
     ),

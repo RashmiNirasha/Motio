@@ -218,6 +218,8 @@ Space bar toggles recording. Only hands matching the filter are saved.
 Loading MediaPipe...
 </div>
 
+<div class="hint" id="cameraNote"></div>
+
 
 <div id="cameraWrap">
 
@@ -269,8 +271,10 @@ import {
     toPixelLandmarks,
     HandTracker,
     detectionsFromResult,
-    startCamera
-} from "./hand-tracking.js";
+    startCamera,
+    addCameraOptions,
+    cameraErrorMessage
+} from "./hand-tracking.js?v=4";
 
 
 const {
@@ -498,9 +502,21 @@ startButton.onclick = async () => {
     video.controls = false;
     cameraWrap.classList.remove("fileMode");
 
-    await startCamera(video, sourceSelect.value);
+    try {
 
-    begin("Camera running. Press Record during each grasp.");
+        const camera = await startCamera(video, sourceSelect.value);
+
+        document.getElementById("cameraNote").textContent = camera.note;
+
+        await addCameraOptions(sourceSelect, camera.deviceId);
+
+        begin("Camera running. Press Record during each grasp.");
+
+    } catch (error) {
+
+        console.error(error);
+        statusText.textContent = cameraErrorMessage(error);
+    }
 };
 
 

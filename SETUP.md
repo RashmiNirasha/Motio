@@ -25,14 +25,19 @@ pip install torch
 
 `requirements.txt` also covers the original ChildPlay-Hand baseline code in `src/`.
 
-### `childplay_coreml`: web server and Core ML
+### `childplay_coreml`: web server, object detector, AI assistant
 
 ```bash
 conda create -n childplay_coreml python=3.11 -y
 conda activate childplay_coreml
-pip install fastapi uvicorn numpy torch
-pip install coremltools   # only for mvp/convert_to_coreml.py
+pip install -r mvp/requirements-mvp.txt
+yolo settings sync=False hub=False   # turn off Ultralytics usage analytics
 ```
+
+`mvp/requirements-mvp.txt` pins the versions v1 was tested with. PyTorch and NumPy are
+pinned on purpose: an unpinned detector install can upgrade them and break the hand model.
+On first start the server downloads the YOLO-World weights (~26 MB, into
+`mvp/models_detect/`) and the CLIP ViT-B/32 text encoder (~350 MB, into `~/.cache/clip`).
 
 ### `childplay_download`: source videos
 
@@ -41,6 +46,16 @@ conda create -n childplay_download python=3.11 -y
 conda activate childplay_download
 pip install yt-dlp
 ```
+
+### AI assistant: Claude API or a free local model
+
+Either one is enough.
+
+- **Claude API**: create a key at console.anthropic.com and set it in the terminal that
+  starts the server: `export ANTHROPIC_API_KEY="..."`. Never commit it.
+- **Local and free**: install [Ollama](https://ollama.com), then `ollama pull qwen2.5:7b`
+  (~4.7 GB) and start the server with `MOTIO_LLM_BACKEND=ollama`. Ollama 0.5 or newer is
+  recommended, because it enforces the reply schema.
 
 ### Cloudflare Tunnel (for the iPhone camera)
 
@@ -73,9 +88,21 @@ ln -s /path/to/ChildPlay-gaze data/ChildPlay-gaze
 
 Only `annotations` and `pose` are needed to rebuild the interaction model. The source `videos/` are needed only for pincer candidate extraction (`mvp/download_childplay_videos.sh` fetches missing ones).
 
-## 4. Interaction model (optional rebuild)
+## 4. Interaction models
 
-The prebuilt dataset (`mvp/dataset_v2/`) and normalization files are in Git. Only the checkpoint `child_object_interaction.pt` is not, so train it once:
+Model checkpoints (`*.pt`) are not in Git. The prebuilt dataset (`mvp/dataset_v2/`) is,
+so both models can be trained without downloading ChildPlay.
+
+**Live model (used by v1):** hand shape only, so it works on MediaPipe landmarks.
+About 17 minutes on an Apple M3 CPU:
+
+```bash
+conda activate childplay_hand
+python mvp/train_live_interaction.py   # → mvp/models_live/child_interaction_live.pt
+```
+
+**Original model** (kept for comparison; start the server with
+`MOTIO_INTERACTION_MODEL=original` to use it):
 
 ```bash
 conda activate childplay_hand
@@ -109,4 +136,13 @@ conda activate childplay_coreml
 python -m uvicorn mvp.webapp.server:app --host 0.0.0.0 --port 8000
 ```
 
-http://127.0.0.1:8000/health should return `"status": "ok"`. With the server running, `python mvp/webapp/test_server.py` sends two test sequences to `/predict`.
+http://127.0.0.1:8000/health should return `"status": "ok"` and
+`"model": "child_interaction_live (hand shape only)"`. The log prints
+`Object detector ready on mps` about 10 seconds after start.
+
+Automated tests (no camera, no API key needed):
+
+```bash
+python mvp/observe/test_hand_state.py
+python mvp/observe/test_assistant_pipeline.py
+```

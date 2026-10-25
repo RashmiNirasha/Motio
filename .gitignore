@@ -37,3 +37,9 @@ mvp/pincer_candidates/
 
 # Pincer model checkpoints (train with mvp/train_pincer.py)
 mvp/models_pincer/
+
+# Recorded observation sessions (numbers only, no video)
+mvp/observe_logs/
+
+# Downloaded detector weights
+mvp/models_detect/

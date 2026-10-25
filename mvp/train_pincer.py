@@ -125,6 +125,9 @@ child_candidates = {
 
 video_ages = load_json(os.path.join(CANDIDATE_DIR, "video_age.json"), {})
 
+# Labelled clips stay valid after re-extraction changes candidate ids.
+labelled_ids = set(load_json(os.path.join(CANDIDATE_DIR, "labels.json"), {}))
+
 skipped = {"not a child candidate": 0, "not confirmed under 5": 0}
 
 clips = []
@@ -141,7 +144,11 @@ for path in sorted(glob.glob(os.path.join(args.data_dir, "*.json"))):
 
     if clip.get("source") == "childplay":
 
-        if clip["source_name"] not in child_candidates:
+        if not (
+            clip.get("is_child")
+            or clip["source_name"] in child_candidates
+            or clip["source_name"] in labelled_ids
+        ):
             skipped["not a child candidate"] += 1
             continue
 

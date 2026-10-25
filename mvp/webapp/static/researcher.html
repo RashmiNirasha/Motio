@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+>
+
+<title>Motio Researcher View</title>
+
+
+<style>
+
+:root {
+    --bg: #0f1012;
+    --panel: #191b1f;
+    --panel-2: #22252b;
+    --ink: #e9ebef;
+    --muted: #9aa0aa;
+    --line: #2c3037;
+    --good: #5aef78;
+    --warn: #ffbe45;
+    --bad: #ff6b5e;
+    --hand1: #2e9e6b;
+    --hand2: #3d7bd9;
+    --amber: #f2a541;
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+/* Elements hidden from script must stay hidden even when CSS sets display. */
+[hidden] {
+    display: none !important;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 14px 16px 30px;
+}
+
+h1 {
+    font-size: 17px;
+    margin: 0;
+}
+
+h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin: 0 0 8px;
+}
+
+.top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    margin-bottom: 12px;
+}
+
+.conn {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    font-size: 13px;
+}
+
+.conn.on {
+    color: var(--good);
+}
+
+.conn.off {
+    color: var(--warn);
+}
+
+.top .spacer {
+    flex: 1;
+}
+
+button {
+    font: inherit;
+    color: var(--ink);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+}
+
+button.rec.on {
+    background: var(--bad);
+    border-color: var(--bad);
+    color: #fff;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 12px;
+}
+
+@media (max-width: 1000px) {
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    min-width: 0;
+}
+
+#mirror {
+    width: 100%;
+    border-radius: 8px;
+    background: #000;
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
+    display: block;
+}
+
+.hands {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.hand {
+    background: var(--panel-2);
+    border-radius: 10px;
+    padding: 10px;
+    border-left: 4px solid var(--c);
+}
+
+.hand.off {
+    opacity: 0.45;
+}
+
+.hand .phase {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 4px 0;
+}
+
+.bar {
+    position: relative;
+    height: 10px;
+    background: #3a3e46;
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 6px 0;
+}
+
+.bar i {
+    display: block;
+    height: 100%;
+    background: #fff;
+    width: 0;
+    transition: width 0.15s;
+}
+
+.bar b {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--bad);
+}
+
+.kv {
+    color: var(--muted);
+    font-size: 12.5px;
+}
+
+.kv span {
+    color: var(--ink);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+td,
+th {
+    text-align: left;
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--line);
+}
+
+th {
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.log {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.log div {
+    padding: 1px 0;
+}
+
+.exchange {
+    background: var(--panel-2);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+}
+
+.exchange .q {
+    font-weight: 700;
+    color: #9cc2ff;
+}
+
+.exchange .meta {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin: 4px 0;
+}
+
+.flag {
+    display: inline-block;
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: 12px;
+    margin-right: 4px;
+    background: #3b2e14;
+    color: var(--warn);
+}
+
+.flag.ok {
+    background: #173322;
+    color: var(--good);
+}
+
+details {
+    margin-top: 6px;
+}
+
+summary {
+    cursor: pointer;
+    color: var(--muted);
+}
+
+pre {
+    margin: 6px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+    max-height: 340px;
+    overflow: auto;
+    background: #111316;
+    padding: 8px;
+    border-radius: 8px;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<div class="top">
+
+    <h1>Motio · Researcher view</h1>
+
+    <span class="conn off" id="conn">Waiting for the caregiver page</span>
+
+    <span class="muted" id="sessionInfo"></span>
+
+    <span class="spacer"></span>
+
+    <button class="rec" id="record" disabled>● Record session</button>
+
+    <button id="aiNow" disabled>What the AI receives now</button>
+
+</div>
+
+<p class="muted" id="hint">
+    Open <b>/app/caregiver.html</b> in this same browser (another tab or window).
+    This page only receives data from pages in this browser on this computer.
+</p>
+
+
+<div class="grid">
+
+<div>
+
+    <div class="panel">
+        <h2>Camera (mirrored, with detections)</h2>
+        <img id="mirror" alt="Mirrored camera view">
+        <div class="kv" id="sourceNote" style="margin-top:6px"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Hands</h2>
+        <div class="hands" id="hands"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Objects</h2>
+        <div class="kv" id="objectsMeta"></div>
+        <table>
+            <thead><tr><th>Object</th><th>Confidence</th><th>Box (x1, y1, x2, y2)</th></tr></thead>
+            <tbody id="objects"></tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Events</h2>
+        <div class="log" id="events"></div>
+    </div>
+
+</div>
+
+<div>
+
+    <div class="panel">
+        <h2>AI conversation (full detail)</h2>
+        <div id="exchanges" class="muted">No questions yet.</div>
+    </div>
+
+    <div class="panel">
+        <h2>What the AI receives now</h2>
+        <pre id="aiSees" class="muted">Press "What the AI receives now".</pre>
+    </div>
+
+</div>
+
+</div>
+
+
+<script type="module">
+
+const CHANNEL_NAME = "motio-observer";
+const HAND_COLORS = ["#2e9e6b", "#3d7bd9"];
+
+const $ = id => document.getElementById(id);
+
+const channel = new BroadcastChannel(CHANNEL_NAME);
+
+let sessionId = null;
+let threshold = 0.48;
+let lastMessage = 0;
+let recording = false;
+let pending = null;
+
+
+function el(tag, className, text) {
+
+    const node = document.createElement(tag);
+
+    if (className) {
+        node.className = className;
+    }
+
+    if (text !== undefined) {
+        node.textContent = text;
+    }
+
+    return node;
+}
+
+
+// --------------------------------------------------
+// Connection
+// --------------------------------------------------
+
+function hello() {
+
+    channel.postMessage({ type: "hello" });
+
+    const connected = performance.now() - lastMessage < 4000;
+
+    $("conn").className = "conn " + (connected ? "on" : "off");
+    $("conn").textContent = connected ? "Connected to the caregiver page" : "Waiting for the caregiver page";
+    $("hint").hidden = connected;
+}
+
+setInterval(hello, 1500);
+hello();
+
+
+// --------------------------------------------------
+// Hands
+// --------------------------------------------------
+
+const handCards = [0, 1].map(slot => {
+
+    const card = el("div", "hand off");
+
+    card.style.setProperty("--c", HAND_COLORS[slot]);
+    card.innerHTML = `
+        <div><b>Hand ${slot + 1}</b> <span class="kv handed"></span></div>
+        <div class="phase">—</div>
+        <div class="bar"><i></i><b></b></div>
+        <div class="kv prob"></div>
+        <div class="kv detail"></div>
+        <div class="kv objs"></div>`;
+
+    $("hands").append(card);
+
+    return card;
+});
+
+function renderHands(result) {
+
+    const bySlot = new Map(result.hands.map(h => [h.slot, h]));
+    const warming = new Map((result.warming || []).map(w => [w.slot, w]));
+
+    handCards.forEach((card, slot) => {
+
+        const h = bySlot.get(slot);
+        const w = warming.get(slot);
+
+        card.querySelector(".bar b").style.left = `${threshold * 100}%`;
+
+        if (!h || !h.visible) {
+
+            card.classList.add("off");
+            card.querySelector(".phase").textContent = w ? "warming up" : "—";
+            card.querySelector(".prob").textContent = w ? `buffer ${w.frames} / ${w.of} frames` : "not visible";
+            card.querySelector(".detail").textContent = "";
+            card.querySelector(".objs").textContent = "";
+            card.querySelector(".bar i").style.width = "0%";
+            return;
+        }
+
+        card.classList.remove("off");
+        card.querySelector(".handed").textContent = `(${h.handedness})`;
+        card.querySelector(".phase").textContent = `${h.phase} · inferred`;
+        card.querySelector(".bar i").style.width = `${h.p_smooth * 100}%`;
+        card.querySelector(".prob").innerHTML = "";
+        card.querySelector(".prob").append(
+            "p ", el("span", "", h.p.toFixed(3)),
+            " · smoothed ", el("span", "", h.p_smooth.toFixed(3)),
+            " · threshold ", el("span", "", threshold.toFixed(2))
+        );
+        card.querySelector(".detail").textContent =
+            `${h.interacting ? `interacting ${h.interaction_s.toFixed(1)} s` : "not interacting"}`
+            + ` · speed ${h.speed_palms_per_s.toFixed(2)} palms/s`;
+        card.querySelector(".objs").textContent =
+            (h.object_in_hand ? `in hand: ${h.object_in_hand} · ` : "")
+            + (h.objects_near.length
+                ? "near: " + h.objects_near.map(o => `${o.label} (${o.relation}, ${o.distance_palms})`).join(", ")
+                : "no objects near");
+    });
+
+    for (const event of result.events) {
+
+        const row = el(
+            "div",
+            "",
+            `${event.t.toFixed(2)}  hand ${event.slot + 1}  ${event.type}`
+            + (event.duration_s !== undefined ? `  ${event.duration_s}s mean p ${event.mean_p}` : "")
+            + (event.reason ? `  (${event.reason})` : "")
+        );
+
+        $("events").prepend(row);
+    }
+
+    while ($("events").children.length > 120) {
+        $("events").lastChild.remove();
+    }
+}
+
+
+// --------------------------------------------------
+// Objects
+// --------------------------------------------------
+
+function renderObjects(summary) {
+
+    const body = $("objects");
+
+    body.innerHTML = "";
+
+    if (!summary.enabled) {
+        $("objectsMeta").textContent = "Object detection is off on the caregiver page.";
+        return;
+    }
+
+    $("objectsMeta").textContent = summary.error
+        ? "Error: " + summary.error
+        : summary.loading
+            ? "Loading detector..."
+            : `detector ${summary.ms} ms on ${summary.device} · frame to result ${summary.roundTripMs} ms`;
+
+    for (const o of summary.objects) {
+
+        const row = el("tr");
+
+        row.append(
+            el("td", "", o.label),
+            el("td", "", o.confidence.toFixed(2)),
+            el("td", "", o.box.map(v => v.toFixed(3)).join(", "))
+        );
+
+        body.append(row);
+    }
+}
+
+
+// --------------------------------------------------
+// AI exchanges
+// --------------------------------------------------
+
+function exchangeBox(question) {
+
+    if ($("exchanges").classList.contains("muted")) {
+        $("exchanges").classList.remove("muted");
+        $("exchanges").textContent = "";
+    }
+
+    const box = el("div", "exchange");
+
+    box.append(el("div", "q", "Q: " + question));
+    box.append(el("div", "meta", "waiting for the answer..."));
+
+    $("exchanges").prepend(box);
+
+    return box;
+}
+
+function renderAnswer(box, reply) {
+
+    const meta = reply.meta;
+
+    box.querySelector(".meta").remove();
+
+    const line = el("div", "meta");
+
+    line.textContent =
+        `${meta.backend || "claude"} · ${meta.model}`
+        + (meta.effort ? ` · effort ${meta.effort}` : "")
+        + ` · ${meta.seconds} s · tokens in ${meta.usage.input_tokens} / out ${meta.usage.output_tokens}`
+        + ` · $${meta.estimated_cost_usd.toFixed(4)}`;
+
+    box.append(line);
+
+    const flags = el("div");
+
+    flags.append(el("span", "flag" + (meta.safety_notes.length ? "" : " ok"),
+        meta.safety_notes.length ? `${meta.safety_notes.length} check note(s)` : "passed checks first time"));
+
+    if (meta.development_question) {
+        flags.append(el("span", "flag", "development question: fixed note added"));
+    }
+
+    if (reply.needs_more_observation) {
+        flags.append(el("span", "flag", "model: needs more observation"));
+    }
+
+    if (!reply.activity.uses_only_visible_objects) {
+        flags.append(el("span", "flag", "activity uses unobserved items"));
+    }
+
+    box.append(flags);
+
+    for (const note of meta.safety_notes) {
+        box.append(el("div", "meta", "• " + note));
+    }
+
+    box.append(el("div", "", "A: " + reply.reply));
+
+    const answer = { ...reply };
+    delete answer.observation;
+
+    const raw = el("details");
+    raw.append(el("summary", "", "Full answer (JSON)"));
+    raw.append(el("pre", "", JSON.stringify(answer, null, 1)));
+    box.append(raw);
+
+    const sent = el("details");
+    sent.append(el("summary", "", "Observation sent with this question"));
+    sent.append(el("pre", "", JSON.stringify(reply.observation, null, 1)));
+    box.append(sent);
+}
+
+
+// --------------------------------------------------
+// Messages from the caregiver page
+// --------------------------------------------------
+
+channel.onmessage = ({ data: message }) => {
+
+    lastMessage = performance.now();
+
+    if (message.sessionId && message.sessionId !== sessionId) {
+
+        sessionId = message.sessionId;
+        $("record").disabled = false;
+        $("aiNow").disabled = false;
+    }
+
+    const data = message.data;
+
+    switch (message.type) {
+
+        case "session":
+            if (data.threshold) {
+                threshold = data.threshold;
+            }
+            $("sessionInfo").textContent =
+                `session ${data.sessionId.slice(0, 8)} · age ${data.ageMonths ?? "not set"} months`;
+            break;
+
+        case "frame":
+            $("mirror").src = data.src;
+            break;
+
+        case "source":
+            $("sourceNote").textContent = data.note;
+            break;
+
+        case "hands":
+            renderHands(data);
+            break;
+
+        case "objects":
+            renderObjects(data);
+            break;
+
+        case "age":
+            $("sessionInfo").textContent =
+                `session ${sessionId.slice(0, 8)} · age ${data.months ?? "not set"} months`;
+            break;
+
+        case "ask":
+            pending = exchangeBox(data.question);
+            break;
+
+        case "answer":
+            renderAnswer(pending || exchangeBox(data.question), data.reply);
+            pending = null;
+            break;
+
+        case "answer_error":
+            (pending || exchangeBox(data.question)).querySelector(".meta").textContent = "ERROR: " + data.error;
+            pending = null;
+            break;
+
+        case "conversation_reset":
+            $("exchanges").prepend(el("div", "meta", "— new conversation started —"));
+            break;
+    }
+};
+
+
+// --------------------------------------------------
+// Controls (call the server for the caregiver's session)
+// --------------------------------------------------
+
+$("record").onclick = async () => {
+
+    const response = await fetch("/observe/record", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, on: !recording })
+    });
+
+    const result = await response.json();
+
+    recording = result.recording;
+
+    $("record").classList.toggle("on", recording);
+    $("record").textContent = recording ? "■ Stop recording" : "● Record session";
+
+    $("sourceNote").textContent = recording
+        ? `Recording numbers only (no video) to ${result.file}`
+        : `Saved ${result.file} — replay with: python mvp/observe/replay.py ${result.file}`;
+};
+
+$("aiNow").onclick = async () => {
+
+    const response = await fetch(`/observe/observation?session_id=${encodeURIComponent(sessionId)}`);
+
+    $("aiSees").classList.remove("muted");
+    $("aiSees").textContent = JSON.stringify(await response.json(), null, 1);
+};
+
+</script>
+
+
+</body>
+
+</html>
